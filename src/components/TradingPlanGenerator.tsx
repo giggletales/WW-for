@@ -85,14 +85,32 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           ? parsedQuestionnaire?.accountEquity 
           : parsedQuestionnaire?.accountSize;
 
-    <FuturisticScene className="min-h-screen text-white flex items-center justify-center p-4 relative">
-      <AnimatedBackground />
-      <div className="relative w-full max-w-3xl z-10">
-        <Card3D className="p-8 form-3d" glowColor="cyan">
-          <div className="relative z-10">
-            <HolographicText className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</HolographicText>
-            <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
-            experience: parsedQuestionnaire?.experience || 'intermediate',
+        const fallbackDashboardData = {
+          user: {
+            name: user.name || 'Trader',
+            email: user.email,
+            membershipTier: user.membershipTier || 'professional',
+            joinDate: new Date().toISOString(),
+            lastLogin: new Date().toISOString(),
+          },
+          account: {
+            balance: accountValue || 100000,
+            equity: accountValue || 100000,
+            margin: 0,
+            freeMargin: accountValue || 100000,
+            marginLevel: 0
+          },
+          performance: {
+            totalPnl: 0,
+            winRate: 0,
+            totalTrades: 0,
+            profitFactor: 0,
+            maxDrawdown: 0
+          },
+          signals: [],
+          news: [],
+          lastUpdated: new Date().toISOString(),
+          experience: parsedQuestionnaire?.experience || 'intermediate',
           riskProtocol: {
             maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
             riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
@@ -248,10 +266,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
   if (isLoading || !user) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
-        <FuturisticBackground />
-        <FuturisticCursor />
-        
-        {/* Futuristic Loading Animation */}
         <div className="relative z-10 text-center">
           {/* Main Loading Circle */}
           <div className="relative mb-8">
@@ -272,56 +286,10 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
             <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
               INITIALIZING DASHBOARD
             </span>
-            <div className="space-y-6">
-              <div>
-                      }`}
-                    >
-                      <div className="text-center">
-                        <div className="font-semibold text-white">{option.label}</div>
-                        <div className="text-sm text-gray-400 mt-1">{option.desc}</div>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              </Card3D>
-            </ScrollReveal>
-            </div>
-            <div className="flex items-center space-x-3">
-            <ScrollReveal delay={0.8}>
-              <Card3D className="p-6" glowColor="green">
-                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
-                  <Button3D
-                    onClick={downloadPlan}
-                    variant="secondary"
-                  >
-                    <Download className="w-5 h-5 mr-2" />
-                    <span>Download Plan</span>
-                  </Button3D>
-                  
-                  <Button3D
-                    onClick={handleContinue}
-                    variant="primary"
-                    size="lg"
-                  >
-                    <span>Continue to Dashboard</span>
-                    <ArrowRight className="w-5 h-5 ml-2" />
-                  </Button3D>
-                </div>
-              </Card3D>
-            </ScrollReveal>
+          </div>
+          <div className="space-y-2 text-sm text-gray-400">
             <div className="animate-pulse">» Establishing secure connection...</div>
             <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
-            <ScrollReveal delay={1.0}>
-              <div className="flex justify-between items-center mt-8">
-                <button
-                  onClick={() => navigate('/setup/risk')}
-                  className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors nav-item-3d"
-                >
-                  <ArrowLeft className="w-5 h-5" />
-                  <span>Back to Risk Config</span>
-                </button>
-              </div>
-            </ScrollReveal>
           </div>
         </div>
       </div>
@@ -334,8 +302,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
       : "Please complete the setup process to access your dashboard.";
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
-        <FuturisticBackground />
-        <FuturisticCursor />
         <div className="relative z-10 text-center">
           <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
           <p className="text-gray-400">{message}</p>
@@ -369,8 +335,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
 
   return (
     <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
       <ConsentForm 
         isOpen={showConsentForm}
         onAccept={handleConsentAccept}
@@ -395,7 +359,7 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
         </select>
       </div>
       {renderTheme()}
-    </FuturisticScene>
+    </div>
   );
 };
 

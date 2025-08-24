@@ -85,14 +85,32 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           ? parsedQuestionnaire?.accountEquity 
           : parsedQuestionnaire?.accountSize;
 
-    <FuturisticScene className="min-h-screen text-white flex items-center justify-center p-4 relative">
-      <AnimatedBackground />
-      <div className="relative w-full max-w-3xl z-10">
-        <Card3D className="p-8 form-3d" glowColor="cyan">
-          <div className="relative z-10">
-            <HolographicText className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</HolographicText>
-            <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
-            experience: parsedQuestionnaire?.experience || 'intermediate',
+        const fallbackDashboardData = {
+          user: {
+            name: user.name || 'Trader',
+            email: user.email,
+            membershipTier: user.membershipTier || 'professional',
+            joinDate: new Date().toISOString(),
+            lastLogin: new Date().toISOString(),
+          },
+          account: {
+            balance: accountValue || 100000,
+            equity: accountValue || 100000,
+            margin: 0,
+            freeMargin: accountValue || 100000,
+            marginLevel: 0
+          },
+          performance: {
+            totalPnl: 0,
+            winRate: 0,
+            totalTrades: 0,
+            profitFactor: 0,
+            maxDrawdown: 0
+          },
+          signals: [],
+          news: [],
+          lastUpdated: new Date().toISOString(),
+          experience: parsedQuestionnaire?.experience || 'intermediate',
           riskProtocol: {
             maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
             riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
@@ -248,75 +266,59 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
   if (isLoading || !user) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
-            <div className="space-y-6">
-              <div>
-                <div className="p-2 rounded-lg bg-red-500/20 border border-red-500/30 float-animation">
-                  <AlertTriangle className="w-5 h-5 text-red-400 float-animation" />
-              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
-                <HolographicText className="text-lg font-semibold text-red-400">Risk Parameters</HolographicText>
-              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
-              {/* Center dot */}
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
-            </div>
+        <div className="relative">
+          {/* Outer Ring */}
+          <div className="w-32 h-32 rounded-full border-4 border-gray-800 relative">
+            {/* Spinning Ring */}
+            <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-blue-400 border-r-blue-400 animate-spin"></div>
+            {/* Counter-spinning Ring */}
+            <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+            {/* Pulsing Core */}
+            <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
+            {/* Center dot */}
+            <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
           </div>
           
           {/* Loading Text with Typewriter Effect */}
-        <ScrollReveal delay={0.8}>
           <div className="text-center mt-12">
-            </span>
-              <Button3D
-                  <span className="text-red-400 font-bold counter-3d">${(planData.riskAmount || 0).toFixed(2)}</span>
-                variant="accent"
-                size="lg"
-          <div className="space-y-3 max-w-md mx-auto">
-                <Shield className="w-5 h-5 mr-2" />
-                Proceed to Upload Screenshot
-                <Shield className="w-5 h-5 ml-2" />
-              </Button3D>
-            <div className="flex items-center space-x-3">
-              <Button3D
+            <div className="space-y-3 max-w-md mx-auto">
+              <div className="flex items-center space-x-3">
+                <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
+                </div>
+                <div className="text-purple-400 text-xs font-mono w-8">91%</div>
               </div>
-                <div className="p-2 rounded-lg bg-blue-500/20 border border-blue-500/30 float-animation">
-                  <Clock className="w-5 h-5 text-blue-400 float-animation" />
-            <div className="flex items-center space-x-3">
-                <HolographicText className="text-lg font-semibold text-blue-400">Trading Schedule</HolographicText>
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
-              </div>
-              <div className="text-purple-400 text-xs font-mono w-8">91%</div>
+            </div>
+            
+            {/* Status Messages */}
+            <div className="mt-6 text-gray-400 text-sm font-mono">
+              <div className="animate-pulse">» Establishing secure connection...</div>
+              <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
+              <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
+            </div>
+            
+            {/* Scanning Effect */}
+            <div className="absolute -inset-4 opacity-30">
+              <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
+              <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
             </div>
           </div>
-          
-          {/* Status Messages */}
-          <div className="mt-6 text-gray-400 text-sm font-mono">
-            <div className="animate-pulse">» Establishing secure connection...</div>
-            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
-            <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
-                  <span className="text-red-400 font-bold counter-3d">${(planData.dailyRiskAmount || 0).toFixed(2)}</span>
-          
-          {/* Scanning Effect */}
-          <div className="absolute -inset-4 opacity-30">
-                  <span className="text-green-400 font-bold counter-3d">${(planData.dailyProfitTarget || 0).toFixed(2)}</span>
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
-            <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
-            </Card3D>
-          </div>
-        </ScrollReveal>
+        </div>
       </div>
     );
   }
 
   if (!user.setupComplete) {
-                variant="accent"
-                size="lg"
+    const message = user.membershipTier === 'kickstarter' 
       ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
-                <Brain className="w-5 h-5 mr-2" />
-                {fromQuestionnaire ? 'Save Plan & Go to Dashboard' : 'Proceed to Dashboard'}
-                <Target className="w-5 h-5 ml-2" />
-              </Button3D>
+      : "Please complete your account setup to access the dashboard.";
+    
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
+        <div className="text-center">
           <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
           <p className="text-gray-400">{message}</p>
-        </ScrollReveal>
+        </div>
       </div>
     );
   }
@@ -346,8 +348,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
 
   return (
     <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
       <ConsentForm 
         isOpen={showConsentForm}
         onAccept={handleConsentAccept}
@@ -372,7 +372,7 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
         </select>
       </div>
       {renderTheme()}
-    </FuturisticScene>
+    </div>
   );
 };
 

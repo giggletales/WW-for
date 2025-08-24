@@ -85,14 +85,32 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           ? parsedQuestionnaire?.accountEquity 
           : parsedQuestionnaire?.accountSize;
 
-    <FuturisticScene className="min-h-screen text-white flex items-center justify-center p-4 relative">
-      <AnimatedBackground />
-      <div className="relative w-full max-w-3xl z-10">
-        <Card3D className="p-8 form-3d" glowColor="cyan">
-          <div className="relative z-10">
-            <HolographicText className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</HolographicText>
-            <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
-            experience: parsedQuestionnaire?.experience || 'intermediate',
+        const fallbackDashboardData = {
+          user: {
+            name: user.name || 'Trader',
+            email: user.email,
+            membershipTier: user.membershipTier || 'professional',
+            joinDate: new Date().toISOString(),
+            lastLogin: new Date().toISOString(),
+          },
+          account: {
+            balance: accountValue || 100000,
+            equity: accountValue || 100000,
+            margin: 0,
+            freeMargin: accountValue || 100000,
+            marginLevel: 0
+          },
+          performance: {
+            totalPnl: 0,
+            winRate: 0,
+            totalTrades: 0,
+            profitFactor: 0,
+            maxDrawdown: 0
+          },
+          signals: [],
+          news: [],
+          lastUpdated: new Date().toISOString(),
+          experience: parsedQuestionnaire?.experience || 'intermediate',
           riskProtocol: {
             maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
             riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
@@ -234,124 +252,9 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
 
   const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
     if (tradingState) {
-            <div className="space-y-6">
-              <div>
-                      >
-                        <div className="flex items-center justify-between mb-4">
-                          <HolographicText className="text-xl font-bold text-white">{firm.name}</HolographicText>
-                          {firm.name === "FTMO" && (
-                            <span className="text-xs font-bold bg-yellow-400 text-black px-2 py-1 rounded-full float-animation">
-                              POPULAR
-                            </span>
-                          )}
-                        </div>
-                        <p className="text-sm text-gray-400 mb-4 h-16">{`A leading prop firm with various account types.`}</p>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between text-gray-400">
-                            <span>Daily Loss:</span>
-                            <span className="text-white">{firm.dailyLossLimit}</span>
-                          </div>
-                          <div className="flex justify-between text-gray-400">
-                            <span>Max Drawdown:</span>
-                            <span className="text-white">{firm.maximumLoss}</span>
-                          </div>
-                          <div className="flex justify-between text-gray-400">
-                            <span>Profit Target:</span>
-                            <span className="text-white">{firm.profitTargets.split(',')[0]}</span>
-                          </div>
-                        </div>
-                      </Card3D>
-                    </ScrollReveal>
-                  );
-                })}
-
-        <FuturisticCursor />
-          </ScrollReveal>
-        {/* Futuristic Loading Animation */}
-        <div className="relative z-10 text-center">
-          {/* Main Loading Circle */}
-            <ScrollReveal delay={0.8}>
-              <Card3D className="p-8 mb-8 holographic" glowColor="purple">
-                <HolographicText className="text-2xl font-bold text-white mb-6">
-                  {selectedFirm} - Detailed Rules
-                </HolographicText>
-              {/* Middle rotating ring */}
-                {(() => {
-                  const firm = propFirms.find(f => f.name === selectedFirm);
-                  if (!firm) return null;
-                  
-                  return (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                      <Card3D className="p-4" glowColor="blue">
-                        <h4 className="text-white font-semibold mb-3">Account Types</h4>
-                        <div className="space-y-2 text-sm">
-                          {firm.accountTypes.map((type, idx) => (
-                            <div key={idx} className="flex justify-between">
-                              <span className="text-gray-400">{type}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </Card3D>
-                      
-                      <Card3D className="p-4" glowColor="green">
-                        <h4 className="text-white font-semibold mb-3">Account Sizes</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Sizes:</span>
-                            <span className="text-white">{firm.accountSizes.join(', ')}</span>
-                          </div>
-                        </div>
-                      </Card3D>
-                      
-                      <Card3D className="p-4" glowColor="purple">
-                        <h4 className="text-white font-semibold mb-3">Rules</h4>
-                        <div className="space-y-2 text-sm">
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Profit Targets:</span>
-                            <span className="text-white">{firm.profitTargets}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Daily Loss Limit:</span>
-                            <span className="text-white">{firm.dailyLossLimit}</span>
-                          </div>
-                          <div className="flex justify-between">
-                            <span className="text-gray-400">Maximum Loss:</span>
-                            <span className="text-white">{firm.maximumLoss}</span>
-                          </div>
-                        </div>
-                      </Card3D>
-          
-                  );
-                })()}
-              </Card3D>
-            </ScrollReveal>
-              <div className="text-blue-400 text-xs font-mono w-8">72%</div>
-            </div>
-            <div className="flex items-center space-x-3">
-          <ScrollReveal delay={1.0}>
-            <div className="flex justify-between items-center">
-              <button
-                onClick={() => navigate('/')}
-                className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors nav-item-3d"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span>Back to Home</span>
-              </button>
-              
-              <Button3D
-                onClick={handleContinue}
-                disabled={!selectedFirm}
-                variant={selectedFirm ? "primary" : "secondary"}
-              >
-                <span>Continue</span>
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button3D>
-            </div>
-          </ScrollReveal>
-        </div>
-      </div>
-    );
-  }
+      // Handle trade logic here
+    }
+  };
 
   if (!user.setupComplete) {
     const message = user.membershipTier === 'kickstarter'
@@ -359,8 +262,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
       : "Please complete the setup process to access your dashboard.";
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
-        <FuturisticBackground />
-        <FuturisticCursor />
         <div className="relative z-10 text-center">
           <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
           <p className="text-gray-400">{message}</p>
@@ -394,8 +295,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
 
   return (
     <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
       <ConsentForm 
         isOpen={showConsentForm}
         onAccept={handleConsentAccept}
@@ -420,7 +319,7 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
         </select>
       </div>
       {renderTheme()}
-    </FuturisticScene>
+    </div>
   );
 };
 
