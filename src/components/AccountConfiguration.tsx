@@ -85,14 +85,9 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           ? parsedQuestionnaire?.accountEquity 
           : parsedQuestionnaire?.accountSize;
 
-    <FuturisticScene className="min-h-screen text-white flex items-center justify-center p-4 relative">
-      <AnimatedBackground />
-      <div className="relative w-full max-w-3xl z-10">
-        <Card3D className="p-8 form-3d" glowColor="cyan">
-          <div className="relative z-10">
-            <HolographicText className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</HolographicText>
-            <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
-            experience: parsedQuestionnaire?.experience || 'intermediate',
+        const fallbackDashboardData = {
+          accountValue: accountValue || 100000,
+          experience: parsedQuestionnaire?.experience || 'intermediate',
           riskProtocol: {
             maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
             riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
@@ -175,116 +170,59 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           console.error('Failed to fetch dashboard data from API, using fallback.', error);
         }
         
-        // Generate comprehensive mock dashboard data if none exists
-            <div className="space-y-6">
-              <div>
-              balance: tradingPlan?.userProfile?.initialBalance || 10000,
-                    </Card3D>
-                  </ScrollReveal>
-                ))}
-              </div>
+        setIsLoading(false);
+      }
+    };
 
-          </ScrollReveal>
-  useEffect(() => {
-    if (user?.email && tradingState) {
-          <ScrollReveal delay={0.6}>
-            <div className="mb-12">
-              <HolographicText className="text-2xl font-bold text-white mb-6 text-center">Select Challenge Type</HolographicText>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {propFirm.rules.challengeTypes.map((type, index) => (
-                  <ScrollReveal key={index} delay={0.1 + index * 0.1}>
-                    <Card3D
-                      onClick={() => setSelectedType(type)}
-                      className={`relative p-8 cursor-pointer transition-all duration-300 interactive-element ${
-                        selectedType === type ? 'neon-border' : ''
-                      }`}
-                      glowColor={selectedType === type ? 'blue' : 'gray'}
-                    >
-                      {selectedType === type && (
-                        <div className="absolute -top-3 -right-3">
-                          <div className="bg-blue-500 rounded-full p-1 float-animation">
-                            <CheckCircle className="w-5 h-5 text-white" />
-                          </div>
-                        </div>
-                      )}
+    initializeData();
+  }, [user]);
 
-                      <div className="text-center mb-6">
-                        <HolographicText className="text-2xl font-bold text-white mb-2 capitalize">
-                          {type.replace('-', ' ')} Challenge
-                        </HolographicText>
-                        <p className="text-gray-400 text-sm">
-                          {getChallengeTypeDescription(type)}
-                        </p>
-      if (isDailyLossLimitReached(tradingState)) {
+  // Handle trade actions
+  const handleMarkAsTaken = async (signal: Signal, outcome: TradeOutcome) => {
+    if (!tradingState || !user?.email) return;
 
-                      <div className="space-y-3">
-                        {getChallengeTypeFeatures(type).map((feature, idx) => (
-                          <div key={idx} className="flex items-center space-x-3">
-                            <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 float-animation" />
-                            <span className="text-gray-300 text-sm">{feature}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </Card3D>
-                  </ScrollReveal>
-                ))}
-              </div>
-              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
-          </ScrollReveal>
-              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
-              {/* Inner pulsing core */}
-              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
-            <ScrollReveal delay={0.8}>
-              <Card3D className="p-8 mb-8 holographic" glowColor="purple">
-                <HolographicText className="text-2xl font-bold text-white mb-6 text-center">Configuration Summary</HolographicText>
-                
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-blue-400 mb-2 counter-3d">
-                      ${selectedSize.toLocaleString()}
-                    </div>
-                    <div className="text-gray-400">Account Size</div>
-            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
-                  
-                  <div className="text-center">
-                    <HolographicText className="text-3xl font-bold text-purple-400 mb-2 capitalize">
-                      {selectedType.replace('-', ' ')}
-                    </HolographicText>
-                    <div className="text-gray-400">Challenge Type</div>
-            <div className="flex items-center space-x-3">
-                  
-                  <div className="text-center">
-                    <div className="text-3xl font-bold text-green-400 mb-2 counter-3d">
-                      ${(selectedSize * propFirm.rules.profitTarget / 100).toLocaleString()}
-                    </div>
-                    <div className="text-gray-400">Profit Target</div>
-            <div className="flex items-center space-x-3">
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-              </Card3D>
-            </ScrollReveal>
-              <div className="text-blue-400 text-xs font-mono w-8">72%</div>
-            </div>
-            <div className="flex items-center space-x-3">
-          <ScrollReveal delay={1.0}>
-            <div className="flex justify-between items-center">
-              <button
-                onClick={() => navigate('/setup/prop-firm')}
-                className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors nav-item-3d"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span>Back to Prop Firm</span>
-              </button>
-              
-              <Button3D
-                onClick={handleContinue}
-                disabled={!selectedSize || !selectedType}
-                variant={selectedSize && selectedType ? "primary" : "secondary"}
-              >
-                <span>Continue</span>
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button3D>
-            </div>
-          </ScrollReveal>
+    if (isDailyLossLimitReached(tradingState)) {
+      alert('Daily loss limit reached. Trading is disabled for today.');
+      return;
+    }
+
+    try {
+      const updatedState = await openTrade(tradingState, signal, outcome);
+      setTradingState(updatedState);
+      
+      // Persist to localStorage
+      const stateKey = `trading_state_${user.email}`;
+      localStorage.setItem(stateKey, JSON.stringify(updatedState));
+      
+      // Log activity
+      await logActivity('trade_taken', {
+        signal: signal.id,
+        outcome: outcome.result,
+        pnl: outcome.pnl
+      });
+    } catch (error) {
+      console.error('Failed to process trade:', error);
+    }
+  };
+
+  const handleConsentAccept = () => {
+    localStorage.setItem('user_consent_accepted', 'true');
+    setShowConsentForm(false);
+  };
+
+  const handleConsentDecline = () => {
+    setShowConsentForm(false);
+    onLogout();
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center">
+        <div className="relative">
+          <div className="w-16 h-16 border-4 border-gray-800 rounded-full"></div>
+          <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
+          <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+          <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
         </div>
       </div>
     );
@@ -296,8 +234,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
       : "Please complete the setup process to access your dashboard.";
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
-        <FuturisticBackground />
-        <FuturisticCursor />
         <div className="relative z-10 text-center">
           <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
           <p className="text-gray-400">{message}</p>
@@ -331,8 +267,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
 
   return (
     <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
       <ConsentForm 
         isOpen={showConsentForm}
         onAccept={handleConsentAccept}
@@ -343,7 +277,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           onChange={(e) => {
             const newTheme = e.target.value;
             setTheme(newTheme);
-            // Persist theme selection to localStorage
             localStorage.setItem('dashboard_selected_concept', newTheme);
             logActivity('theme_change', { theme: newTheme });
           }}
@@ -357,7 +290,7 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
         </select>
       </div>
       {renderTheme()}
-    </FuturisticScene>
+    </div>
   );
 };
 
