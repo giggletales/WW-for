@@ -85,14 +85,32 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           ? parsedQuestionnaire?.accountEquity 
           : parsedQuestionnaire?.accountSize;
 
-    <FuturisticScene className="min-h-screen text-white flex items-center justify-center p-4 relative">
-      <AnimatedBackground />
-      <div className="relative w-full max-w-3xl z-10">
-        <Card3D className="p-8 form-3d" glowColor="cyan">
-          <div className="relative z-10">
-            <HolographicText className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</HolographicText>
-            <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
-            experience: parsedQuestionnaire?.experience || 'intermediate',
+        const fallbackDashboardData = {
+          user: {
+            name: user.name || 'Trader',
+            email: user.email,
+            membershipTier: user.membershipTier || 'professional',
+            joinDate: new Date().toISOString(),
+            lastLogin: new Date().toISOString(),
+          },
+          account: {
+            balance: accountValue || 100000,
+            equity: accountValue || 100000,
+            margin: 0,
+            freeMargin: accountValue || 100000,
+            marginLevel: 0
+          },
+          performance: {
+            totalPnl: 0,
+            winRate: 0,
+            totalTrades: 0,
+            profitFactor: 0,
+            maxDrawdown: 0
+          },
+          signals: [],
+          news: [],
+          lastUpdated: new Date().toISOString(),
+          experience: parsedQuestionnaire?.experience || 'intermediate',
           riskProtocol: {
             maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
             riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
@@ -248,10 +266,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
   if (isLoading || !user) {
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
-        <FuturisticBackground />
-        <FuturisticCursor />
-        
-        {/* Futuristic Loading Animation */}
         <div className="relative z-10 text-center">
           {/* Main Loading Circle */}
           <div className="relative mb-8">
@@ -270,44 +284,9 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
           {/* Loading Text with Typewriter Effect */}
           <div className="text-2xl font-bold mb-4">
             <div className="space-y-6">
-              <div>
-
-                      <div className="space-y-3">
-                        {option.features.map((feature, idx) => (
-                          <div key={idx} className="flex items-center space-x-3">
-                            <div className={`w-2 h-2 rounded-full ${option.color.replace('text-', 'bg-')} float-animation`}></div>
-                            <span className="text-gray-300 text-sm">{feature}</span>
-                          </div>
-                        ))}
-                      </div>
-                    </Card3D>
-                  </ScrollReveal>
-                ))}
-              </div>
-              </div>
-          </ScrollReveal>
+              <div>Loading Dashboard...</div>
             </div>
-            <div className="flex items-center space-x-3">
-          <ScrollReveal delay={1.2}>
-            <div className="flex justify-between items-center">
-              <button
-                onClick={() => navigate('/setup/account')}
-                className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors nav-item-3d"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span>Back to Account</span>
-              </button>
-              
-              <Button3D
-                onClick={handleContinue}
-                disabled={!riskPercentage || !riskRewardRatio || !tradingExperience || !dailyTradingTime || !preferredSession}
-                variant={riskPercentage && riskRewardRatio && tradingExperience && dailyTradingTime && preferredSession ? "primary" : "secondary"}
-              >
-                <span>Generate Plan</span>
-                <ArrowRight className="w-5 h-5 ml-2" />
-              </Button3D>
-            </div>
-          </ScrollReveal>
+          </div>
         </div>
       </div>
     );
@@ -319,8 +298,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
       : "Please complete the setup process to access your dashboard.";
     return (
       <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
-        <FuturisticBackground />
-        <FuturisticCursor />
         <div className="relative z-10 text-center">
           <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
           <p className="text-gray-400">{message}</p>
@@ -354,8 +331,6 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
 
   return (
     <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
       <ConsentForm 
         isOpen={showConsentForm}
         onAccept={handleConsentAccept}
@@ -380,7 +355,7 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
         </select>
       </div>
       {renderTheme()}
-    </FuturisticScene>
+    </div>
   );
 };
 
