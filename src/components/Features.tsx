@@ -1,6 +1,12 @@
 import React from 'react';
 import { Target, Shield, BarChart3, Zap, Award, Users } from 'lucide-react';
 import Header from './Header';
+import FuturisticScene from './3D/FuturisticScene';
+import ScrollReveal from './3D/ScrollReveal';
+import Card3D from './3D/Card3D';
+import HolographicText from './3D/HolographicText';
+import AnimatedBackground from './3D/AnimatedBackground';
+import '../styles/3d-animations.css';
 
 const Features: React.FC = () => {
   const features = [
@@ -37,40 +43,50 @@ const Features: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen text-white overflow-hidden">
+    <FuturisticScene className="min-h-screen text-white overflow-hidden">
+      <AnimatedBackground />
       <Header />
-      <div className="absolute inset-0 z-0 pt-16">
-        <div className="absolute top-0 left-0 w-full h-full bg-grid-pattern opacity-10"></div>
-        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20"></div>
-      </div>
       <div className="container mx-auto px-4 py-24 relative z-10 pt-32">
-        <div className="text-center mb-20">
-          <h1 className="text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-6 animate-fade-in-down">
-            Unleash Your Trading Potential
-          </h1>
-          <p className="text-xl text-gray-400 max-w-3xl mx-auto leading-relaxed animate-fade-in-up">
-            Our platform is engineered with cutting-edge features to give you a decisive edge in the competitive world of prop firm trading.
-          </p>
-        </div>
+        <ScrollReveal delay={0.2}>
+          <div className="text-center mb-20">
+            <HolographicText 
+              className="text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-6"
+              glitchEffect={true}
+              dataText="Unleash Your Trading Potential"
+            >
+              Unleash Your Trading Potential
+            </HolographicText>
+            <p className="text-xl text-gray-400 max-w-3xl mx-auto leading-relaxed">
+              Our platform is engineered with cutting-edge features to give you a decisive edge in the competitive world of prop firm trading.
+            </p>
+          </div>
+        </ScrollReveal>
+        
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
           {features.map((feature, index) => (
-            <div 
-              key={index} 
-              className="bg-gray-900/50 backdrop-blur-lg p-8 rounded-2xl border border-gray-700/50 transition-all duration-300 group hover:border-blue-500/50 hover:shadow-2xl hover:shadow-blue-500/10"
-              style={{ animation: `fade-in-zoom 0.5s ease-out ${index * 0.1}s forwards`, opacity: 0 }}
-            >
-              <div className="mb-6 text-center">
-                <div className="inline-block p-4 bg-gray-800/50 rounded-full group-hover:bg-blue-500/20 transition-all duration-300">
-                  {React.cloneElement(feature.icon, { className: `${feature.icon.props.className} group-hover:scale-110 transition-transform duration-300` })}
+            <ScrollReveal key={index} delay={0.1 + index * 0.1}>
+              <Card3D 
+                className="p-8 group interactive-element"
+                glowColor={feature.icon.props.className.includes('blue') ? 'blue' : 
+                          feature.icon.props.className.includes('green') ? 'green' :
+                          feature.icon.props.className.includes('purple') ? 'purple' :
+                          feature.icon.props.className.includes('yellow') ? 'yellow' :
+                          feature.icon.props.className.includes('red') ? 'red' : 'cyan'}
+              >
+                <div className="mb-6 text-center">
+                  <div className="inline-block p-4 bg-gray-800/50 rounded-full group-hover:bg-blue-500/20 transition-all duration-300 float-animation">
+                    {React.cloneElement(feature.icon, { className: `${feature.icon.props.className} group-hover:scale-110 transition-transform duration-300` })}
+                  </div>
                 </div>
-              </div>
-              <h3 className="text-2xl font-bold text-white text-center mb-4 group-hover:text-blue-400 transition-colors">{feature.title}</h3>
-              <p className="text-gray-400 leading-relaxed text-center">{feature.description}</p>
-            </div>
+                <h3 className="text-2xl font-bold text-white text-center mb-4 group-hover:text-blue-400 transition-colors">{feature.title}</h3>
+                <p className="text-gray-400 leading-relaxed text-center">{feature.description}</p>
+              </Card3D>
+            </ScrollReveal>
           ))}
         </div>
+        </div>
       </div>
-    </div>
+    </FuturisticScene>
   );
 };
 

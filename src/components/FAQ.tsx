@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { ChevronDown, HelpCircle, Briefcase, Shield, Zap, DollarSign, Clock } from 'lucide-react';
 import Header from './Header';
+import FuturisticScene from './3D/FuturisticScene';
+import ScrollReveal from './3D/ScrollReveal';
+import Card3D from './3D/Card3D';
+import HolographicText from './3D/HolographicText';
+import AnimatedBackground from './3D/AnimatedBackground';
+import '../styles/3d-animations.css';
 
 const FAQ: React.FC = () => {
   const [open, setOpen] = useState<number | null>(null);
@@ -73,52 +79,57 @@ const FAQ: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-black to-gray-950 text-white overflow-hidden">
+    <FuturisticScene className="min-h-screen bg-gradient-to-br from-gray-950 via-black to-gray-950 text-white overflow-hidden">
+      <AnimatedBackground />
       <Header />
-      <div className="absolute inset-0 z-0 pt-16">
-        <div className="absolute top-0 left-0 w-full h-full bg-grid-pattern opacity-10"></div>
-        <div className="absolute top-0 left-0 w-full h-full bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20"></div>
-      </div>
       <div className="container mx-auto px-4 py-24 relative z-10 pt-32">
-        <div className="text-center mb-20">
-          <h1 className="text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-6 animate-fade-in-down">
-            Knowledge Base
-          </h1>
-          <p className="text-xl text-gray-400 max-w-3xl mx-auto leading-relaxed animate-fade-in-up">
-            Your questions, answered. Explore our FAQ to find the information you need to start your journey with TraderEdge Pro.
-          </p>
-        </div>
+        <ScrollReveal delay={0.2}>
+          <div className="text-center mb-20">
+            <HolographicText 
+              className="text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-6"
+              glitchEffect={true}
+              dataText="Knowledge Base"
+            >
+              Knowledge Base
+            </HolographicText>
+            <p className="text-xl text-gray-400 max-w-3xl mx-auto leading-relaxed">
+              Your questions, answered. Explore our FAQ to find the information you need to start your journey with TraderEdge Pro.
+            </p>
+          </div>
+        </ScrollReveal>
         
         <div className="max-w-4xl mx-auto">
           {faqCategories.map((category, catIndex) => (
-            <div key={catIndex} className="mb-12">
-              <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
-                {category.icon}
-                {category.category}
-              </h2>
-              <div className="space-y-4">
-                {category.questions.map((faq, index) => (
-                  <div key={index} className="bg-gray-900/50 backdrop-blur-lg rounded-2xl border border-gray-700/50 overflow-hidden animate-fade-in-up" style={{animationDelay: `${0.4 + (catIndex * 0.2) + (index * 0.1)}s`}}>
-                    <button
-                      onClick={() => toggle(catIndex * 10 + index)}
-                      className="w-full text-left flex justify-between items-center p-6 focus:outline-none"
-                    >
-                      <span className="text-xl font-medium text-white">{faq.question}</span>
-                      <ChevronDown className={`w-6 h-6 text-blue-400 transform transition-transform ${open === (catIndex * 10 + index) ? 'rotate-180' : ''}`} />
-                    </button>
-                    <div className={`transition-max-height duration-500 ease-in-out ${open === (catIndex * 10 + index) ? 'max-h-screen' : 'max-h-0'}`}>
-                      <div className="p-6 pt-0">
-                        <p className="text-gray-400 leading-relaxed">{faq.answer}</p>
+            <ScrollReveal key={catIndex} delay={0.2 + catIndex * 0.1}>
+              <div className="mb-12">
+                <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
+                  <div className="float-animation">{category.icon}</div>
+                  <HolographicText>{category.category}</HolographicText>
+                </h2>
+                <div className="space-y-4">
+                  {category.questions.map((faq, index) => (
+                    <Card3D key={index} className="overflow-hidden interactive-element" glowColor="cyan">
+                      <button
+                        onClick={() => toggle(catIndex * 10 + index)}
+                        className="w-full text-left flex justify-between items-center p-6 focus:outline-none"
+                      >
+                        <span className="text-xl font-medium text-white">{faq.question}</span>
+                        <ChevronDown className={`w-6 h-6 text-blue-400 transform transition-transform ${open === (catIndex * 10 + index) ? 'rotate-180' : ''}`} />
+                      </button>
+                      <div className={`transition-all duration-500 ease-in-out ${open === (catIndex * 10 + index) ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'}`}>
+                        <div className="p-6 pt-0">
+                          <p className="text-gray-400 leading-relaxed">{faq.answer}</p>
+                        </div>
                       </div>
-                    </div>
-                  </div>
-                ))}
+                    </Card3D>
+                  ))}
+                </div>
               </div>
-            </div>
+            </ScrollReveal>
           ))}
         </div>
       </div>
-    </div>
+    </FuturisticScene>
   );
 };
 

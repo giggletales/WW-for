@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Check, Star, Zap, Crown, Shield, ArrowLeft, CheckCircle } from 'lucide-react';
 import Header from './Header';
+import FuturisticScene from './3D/FuturisticScene';
+import ScrollReveal from './3D/ScrollReveal';
+import Card3D from './3D/Card3D';
+import HolographicText from './3D/HolographicText';
+import Button3D from './3D/Button3D';
+import AnimatedBackground from './3D/AnimatedBackground';
+import '../styles/3d-animations.css';
 
 const MembershipPlans = () => {
   const navigate = useNavigate();
@@ -118,141 +125,164 @@ const MembershipPlans = () => {
 
 
   return (
-    <div className="min-h-screen">
+    <FuturisticScene className="min-h-screen">
+      <AnimatedBackground />
       <Header />
       
       <div className="pt-20 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
-          <div className="text-center mb-16">
-            <Link to="/" className="inline-flex items-center space-x-2 text-blue-500 hover:text-blue-400 mb-8">
-              <ArrowLeft className="w-5 h-5" />
-              <span>Back to Home</span>
-            </Link>
-            
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-6">Choose Your Plan</h1>
-            <p className="text-lg text-gray-400 max-w-3xl mx-auto mb-8">
-              Select the perfect plan to accelerate your prop firm success with our professional clearing service.
-            </p>
-          </div>
+          <ScrollReveal delay={0.2}>
+            <div className="text-center mb-16">
+              <Link to="/" className="inline-flex items-center space-x-2 text-blue-500 hover:text-blue-400 mb-8 nav-item-3d">
+                <ArrowLeft className="w-5 h-5" />
+                <span>Back to Home</span>
+              </Link>
+              
+              <HolographicText 
+                className="text-4xl md:text-5xl font-bold text-white mb-6"
+                glitchEffect={true}
+                dataText="Choose Your Plan"
+              >
+                Choose Your Plan
+              </HolographicText>
+              <p className="text-lg text-gray-400 max-w-3xl mx-auto mb-8">
+                Select the perfect plan to accelerate your prop firm success with our professional clearing service.
+              </p>
+            </div>
+          </ScrollReveal>
 
           {/* Pricing Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {plans.map((plan, index) => (
-              <div
-                key={index}
-                className={`relative rounded-2xl border-2 ${plan.color} ${plan.bgColor} backdrop-blur-sm p-6 transition-transform duration-300 transform hover:scale-105 ${
-                  plan.popular ? 'scale-105 shadow-2xl' : ''
-                }`}
-              >
-                {plan.popular && (
-                  <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                    <div className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-semibold">
-                      Most Popular
+              <ScrollReveal key={index} delay={0.2 + index * 0.1}>
+                <Card3D
+                  className={`relative p-6 transition-transform duration-300 ${
+                    plan.popular ? 'scale-105 shadow-2xl' : ''
+                  }`}
+                  glowColor={plan.color === 'border-blue-500' ? 'blue' : 
+                            plan.color === 'border-yellow-500' ? 'yellow' :
+                            plan.color === 'border-purple-500' ? 'purple' : 'gray'}
+                >
+                  {plan.popular && (
+                    <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                      <div className="bg-blue-600 text-white px-4 py-2 rounded-full text-sm font-semibold neon-border">
+                        Most Popular
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="text-center mb-8">
+                    <div className="text-blue-500 mb-4 flex justify-center float-animation">
+                      {plan.icon}
+                    </div>
+                    <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
+                    <p className="text-gray-400 text-sm mb-4">{plan.description}</p>
+                    <div className="mb-6">
+                      {plan.price === 0 ? (
+                        <span className="text-3xl font-bold text-green-400 counter-3d">FREE</span>
+                      ) : (
+                        <>
+                          <span className="text-3xl font-bold text-white counter-3d">${plan.price}</span>
+                          <span className="text-gray-400">/{plan.period}</span>
+                        </>
+                      )}
                     </div>
                   </div>
-                )}
 
-                <div className="text-center mb-8">
-                  <div className="text-blue-500 mb-4 flex justify-center">
-                    {plan.icon}
-                  </div>
-                  <h3 className="text-xl font-bold text-white mb-2">{plan.name}</h3>
-                  <p className="text-gray-400 text-sm mb-4">{plan.description}</p>
-                  <div className="mb-6">
-                    {plan.price === 0 ? (
-                      <span className="text-3xl font-bold text-green-400">FREE</span>
-                    ) : (
-                      <>
-                        <span className="text-3xl font-bold text-white">${plan.price}</span>
-                        <span className="text-gray-400">/{plan.period}</span>
-                      </>
-                    )}
-                  </div>
-                </div>
+                  <ul className="space-y-3 mb-6">
+                    {plan.features.map((feature, featureIndex) => (
+                      <li key={featureIndex} className="flex items-start space-x-3">
+                        <Check className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
+                        <span className="text-gray-300 text-sm">{feature}</span>
+                      </li>
+                    ))}
+                  </ul>
 
-                <ul className="space-y-3 mb-6">
-                  {plan.features.map((feature, featureIndex) => (
-                    <li key={featureIndex} className="flex items-start space-x-3">
-                      <Check className="w-4 h-4 text-blue-500 flex-shrink-0 mt-0.5" />
-                      <span className="text-gray-300 text-sm">{feature}</span>
-                    </li>
-                  ))}
-                </ul>
-
-                {(plan as any).isAffiliate ? (
-                  <Link
-                    to="/affiliate-links"
-                    className={`w-full ${plan.buttonColor} text-white py-3 rounded-lg font-semibold transition-colors flex items-center justify-center`}
-                  >
-                    Get Started
-                  </Link>
-                ) : (
-                  <button
-                    onClick={() => handlePlanSelect(plan)}
-                    className={`w-full ${plan.buttonColor} text-white py-3 rounded-lg font-semibold transition-colors`}
-                  >
-                    Get Started
-                  </button>
-                )}
-              </div>
+                  {(plan as any).isAffiliate ? (
+                    <Button3D
+                      onClick={() => window.location.href = '/affiliate-links'}
+                      variant="secondary"
+                      className="w-full"
+                    >
+                      Get Started
+                    </Button3D>
+                  ) : (
+                    <Button3D
+                      onClick={() => handlePlanSelect(plan)}
+                      variant="primary"
+                      className="w-full"
+                    >
+                      Get Started
+                    </Button3D>
+                  )}
+                </Card3D>
+              </ScrollReveal>
             ))}
           </div>
 
           {/* FAQ Section */}
-          <div className="mt-20">
-            <h2 className="text-3xl font-bold text-white text-center mb-12">Frequently Asked Questions</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-medium text-white mb-2">Which prop firms do you support?</h3>
-                  <p className="text-gray-400">We support 150+ major prop firms including FTMO, MyForexFunds, The5%ers, FundingPips, QuantTekel, and many more.</p>
+          <ScrollReveal delay={0.4}>
+            <div className="mt-20">
+              <HolographicText className="text-3xl font-bold text-white text-center mb-12">
+                Frequently Asked Questions
+              </HolographicText>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
+                <div className="space-y-6">
+                  <Card3D className="p-6" glowColor="blue">
+                    <h3 className="text-lg font-medium text-white mb-2">Which prop firms do you support?</h3>
+                    <p className="text-gray-400">We support over 150 of the top prop firms in the industry, including FTMO, MyForexFunds, The5%ers, and many more. Our platform automatically extracts the rules and objectives for your selected firm and challenge type.</p>
+                  </Card3D>
+                  <Card3D className="p-6" glowColor="green">
+                    <h3 className="text-lg font-medium text-white mb-2">How does the trading plan work?</h3>
+                    <p className="text-gray-400">Our proprietary algorithm generates a personalized, multi-phase trading plan based on your selected prop firm, account size, and risk tolerance. It provides clear guidelines on position sizing, daily loss limits, and profit targets to keep you on track.</p>
+                  </Card3D>
+                  <Card3D className="p-6" glowColor="purple">
+                    <h3 className="text-lg font-medium text-white mb-2">How long does it take to clear a challenge?</h3>
+                    <p className="text-gray-400">The time it takes to clear a challenge varies depending on the prop firm and your trading performance. Our tools and strategies are designed to help you clear challenges as quickly as possible, often within the first month.</p>
+                  </Card3D>
                 </div>
-                <div>
-                  <h3 className="text-lg font-medium text-white mb-2">Can I change plans anytime?</h3>
-                  <p className="text-gray-400">Yes, you can upgrade or downgrade your plan at any time. Changes take effect immediately.</p>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-white mb-2">What's included in the trading plan?</h3>
-                  <p className="text-gray-400">Risk management plans include position sizing, phase-specific strategies, auto lot size calculations, and rule compliance monitoring.</p>
-                </div>
-              </div>
-              <div className="space-y-6">
-                <div>
-                  <h3 className="text-lg font-medium text-white mb-2">What is the Kickstarter plan?</h3>
-                  <p className="text-gray-400">Purchase a funded account through our affiliate links and get free access to our premium features for the specified duration.</p>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-white mb-2">Can I cancel my subscription?</h3>
-                  <p className="text-gray-400">Yes, you can cancel your subscription at any time. Your access will continue until the end of the current billing period.</p>
-                </div>
-                <div>
-                  <h3 className="text-lg font-medium text-white mb-2">What is multi account tracker?</h3>
-                  <p className="text-gray-400">Track multiple prop firm accounts simultaneously with consolidated analytics and risk management across all your funded accounts.</p>
+                <div className="space-y-6">
+                  <Card3D className="p-6" glowColor="yellow">
+                    <h3 className="text-lg font-medium text-white mb-2">What are the subscription options?</h3>
+                    <p className="text-gray-400">We offer several subscription tiers, including a monthly and a yearly plan. We also have a free Kickstarter plan for those who use our affiliate links with supported prop firms. You can find more details on our Pricing page.</p>
+                  </Card3D>
+                  <Card3D className="p-6" glowColor="red">
+                    <h3 className="text-lg font-medium text-white mb-2">Can I cancel my subscription?</h3>
+                    <p className="text-gray-400">Yes, you can cancel your subscription at any time from your account dashboard. There are no long-term contracts or hidden fees. Your access will continue until the end of your current billing period.</p>
+                  </Card3D>
+                  <Card3D className="p-6" glowColor="cyan">
+                    <h3 className="text-lg font-medium text-white mb-2">Is my trading account information secure?</h3>
+                    <p className="text-gray-400">Absolutely. We use state-of-the-art encryption and security protocols to protect your data. We do not have direct access to your trading accounts or funds. Our platform only requires read-only data to track performance.</p>
+                  </Card3D>
                 </div>
               </div>
             </div>
-          </div>
+          </ScrollReveal>
 
           {/* CTA Section */}
-          <div className="mt-20 text-center">
-            <div className="bg-gradient-to-r from-blue-600/20 to-gray-800/50 rounded-2xl p-12 border border-gray-700">
-              <h2 className="text-3xl font-bold text-white mb-4">Ready to Clear Your Challenge?</h2>
-              <p className="text-lg text-gray-400 mb-8">
-                Choose the plan that fits your trading goals and start your funded account journey today.
-              </p>
-              <Link
-                to="/payment"
-                className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-xl font-semibold transition-colors inline-flex items-center space-x-2 shadow-lg"
-              >
-                <span>Start Your Journey</span>
-                <Star className="w-5 h-5" />
-              </Link>
+          <ScrollReveal delay={0.6}>
+            <div className="mt-20 text-center">
+              <Card3D className="p-12 holographic" glowColor="cyan">
+                <HolographicText className="text-3xl font-bold text-white mb-4">
+                  Ready to Clear Your Challenge?
+                </HolographicText>
+                <p className="text-lg text-gray-300 mb-8">
+                  Choose the plan that fits your trading goals and start your funded account journey today.
+                </p>
+                <Button3D
+                  onClick={() => window.location.href = '/payment'}
+                  variant="primary"
+                  size="lg"
+                >
+                  Start Your Journey <Star className="w-5 h-5 ml-2" />
+                </Button3D>
+              </Card3D>
             </div>
-          </div>
+          </ScrollReveal>
         </div>
       </div>
-    </div>
+    </FuturisticScene>
   );
 };
 

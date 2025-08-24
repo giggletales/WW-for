@@ -3,7 +3,12 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { TrendingUp, ArrowLeft } from 'lucide-react';
 import PaymentIntegration from './PaymentIntegration';
 import { useUser } from '../contexts/UserContext';
+import FuturisticScene from './3D/FuturisticScene';
+import Card3D from './3D/Card3D';
+import HolographicText from './3D/HolographicText';
+import AnimatedBackground from './3D/AnimatedBackground';
 import api from '../api';
+import '../styles/3d-animations.css';
 
 const PaymentFlow = () => {
   const navigate = useNavigate();
@@ -77,27 +82,28 @@ const PaymentFlow = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
+    <FuturisticScene className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
+      <AnimatedBackground />
       {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4">
+      <header className="nav-3d border-b border-gray-800 px-6 py-4">
         <div className="max-w-7xl mx-auto flex items-center justify-between">
           <div className="flex items-center space-x-4">
             <button
               onClick={() => navigate(-1)}
-              className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
+              className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors nav-item-3d"
             >
               <ArrowLeft className="w-5 h-5" />
               <span>Back</span>
             </button>
             
             <div className="flex items-center space-x-2">
-              <TrendingUp className="w-8 h-8 text-blue-400" />
-              <h1 className="text-2xl font-bold text-white">TraderEdge Pro</h1>
+              <TrendingUp className="w-8 h-8 text-blue-400 float-animation" />
+              <HolographicText className="text-2xl font-bold text-white">TraderEdge Pro</HolographicText>
             </div>
           </div>
 
           <div className="text-right">
-            <div className="text-white font-semibold">Complete Your Setup</div>
+            <HolographicText className="text-white font-semibold">Complete Your Setup</HolographicText>
             <div className="text-sm text-gray-400">Step 2 of 2</div>
           </div>
         </div>
@@ -108,9 +114,13 @@ const PaymentFlow = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           {/* Header */}
           <div className="text-center mb-12">
-            <h2 className="text-3xl md:text-4xl font-bold text-white mb-4">
+            <HolographicText 
+              className="text-3xl md:text-4xl font-bold text-white mb-4"
+              glitchEffect={true}
+              dataText="Complete Your Subscription"
+            >
               Complete Your Subscription
-            </h2>
+            </HolographicText>
             <p className="text-lg text-gray-400 max-w-2xl mx-auto">
               Get instant access to all premium features and start your trading journey
             </p>
@@ -130,7 +140,7 @@ const PaymentFlow = () => {
           </div>
         </div>
       </div>
-    </div>
+    </FuturisticScene>
   );
 };
 

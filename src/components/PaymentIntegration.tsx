@@ -1,6 +1,10 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bitcoin, Check, Shield, Lock, AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react';
+import Card3D from './3D/Card3D';
+import Button3D from './3D/Button3D';
+import HolographicText from './3D/HolographicText';
+import '../styles/3d-animations.css';
 
 // Type declarations for window properties
 declare global {
@@ -467,12 +471,12 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         {/* Order Summary */}
         <div className="lg:col-span-1">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 p-6 sticky top-6">
+          <Card3D className="p-6 sticky top-6" glowColor="blue">
             <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-white">Order Summary</h3>
+              <HolographicText className="text-lg font-semibold text-white">Order Summary</HolographicText>
               <button
                 onClick={() => navigate('/membership')}
-                className="text-sm text-blue-400 hover:text-blue-300"
+                className="text-sm text-blue-400 hover:text-blue-300 nav-item-3d"
               >
                 Change
               </button>
@@ -481,7 +485,7 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
             <div className="space-y-4">
               <div className="flex justify-between">
                 <span className="text-gray-400">{selectedPlan.name}</span>
-                <span className="text-white font-medium">${selectedPlan.price}/{selectedPlan.period}</span>
+                <span className="text-white font-medium counter-3d">${selectedPlan.price}/{selectedPlan.period}</span>
               </div>
               
               {/* Coupon Section */}
@@ -493,36 +497,37 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
                       value={couponCode}
                       onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
                       placeholder="Enter coupon code"
-                      className="flex-1 px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500"
+                      className="input-3d flex-1 px-3 py-2 text-white text-sm"
                       disabled={couponApplied}
                     />
                     {!couponApplied ? (
-                      <button
+                      <Button3D
                         type="button"
                         onClick={applyCoupon}
-                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                        size="sm"
                       >
                         Apply
-                      </button>
+                      </Button3D>
                     ) : (
-                      <button
+                      <Button3D
                         type="button"
                         onClick={removeCoupon}
-                        className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg text-sm font-medium transition-colors"
+                        variant="secondary"
+                        size="sm"
                       >
                         Remove
-                      </button>
+                      </Button3D>
                     )}
                   </div>
                   
                   {couponApplied && (
-                    <div className="bg-green-600/20 border border-green-600 rounded-lg p-3">
+                    <div className="bg-green-600/20 border border-green-600 rounded-lg p-3 neon-border">
                       <div className="flex items-center space-x-2 text-green-400">
                         <CheckCircle className="w-4 h-4" />
                         <span className="font-medium">Coupon Applied</span>
                       </div>
                       <div className="text-green-300 text-sm mt-1">
-                        You saved ${discountAmount.toFixed(2)}!
+                        You saved <span className="counter-3d">${discountAmount.toFixed(2)}</span>!
                       </div>
                     </div>
                   )}
@@ -530,7 +535,7 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
               </div>
               
               {error && (
-                <div className="p-4 bg-red-600/20 border border-red-600 rounded-lg flex items-center space-x-2">
+                <div className="p-4 bg-red-600/20 border border-red-600 rounded-lg flex items-center space-x-2 neon-border">
                   <AlertCircle className="w-5 h-5 text-red-400" />
                   <span className="text-red-400 text-sm">{error}</span>
                 </div>
@@ -540,18 +545,18 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
                 <div className="space-y-2">
                   <div className="flex justify-between">
                     <span className="text-gray-400">Subtotal</span>
-                    <span className="text-white">${selectedPlan.price.toFixed(2)}</span>
+                    <span className="text-white counter-3d">${selectedPlan.price.toFixed(2)}</span>
                   </div>
                   {couponApplied && (
                     <div className="flex justify-between">
                       <span className="text-green-400">Discount</span>
-                      <span className="text-green-400">-${discountAmount.toFixed(2)}</span>
+                      <span className="text-green-400 counter-3d">-${discountAmount.toFixed(2)}</span>
                     </div>
                   )}
                   <div className="flex justify-between border-t border-gray-600 pt-2 mt-2">
                     <span className="text-white font-semibold">Total</span>
                     <span className="text-white font-bold">
-                      ${Math.max(0, selectedPlan.price - discountAmount).toFixed(2)}
+                      <span className="counter-3d">${Math.max(0, selectedPlan.price - discountAmount).toFixed(2)}</span>
                       {couponApplied && discountAmount >= selectedPlan.price && (
                         <span className="text-green-400 ml-2 text-sm">(FREE!)</span>
                       )}
@@ -561,7 +566,7 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
               </div>
             </div>
 
-            <div className="mt-6 p-4 bg-blue-600/20 border border-blue-600 rounded-xl">
+            <div className="mt-6 p-4 bg-blue-600/20 border border-blue-600 rounded-xl neon-border">
               <div className="flex items-center space-x-2 text-blue-400 mb-2">
                 <Check className="w-4 h-4" />
                 <span className="font-medium">What's Included</span>
@@ -572,17 +577,17 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
                 <li>• Custom trading plans</li>
               </ul>
             </div>
-          </div>
+          </Card3D>
         </div>
 
         {/* Payment Form */}
         <div className="lg:col-span-2">
-          <div className="bg-gray-800 rounded-2xl border border-gray-700 p-6">
-            <h3 className="text-xl font-semibold text-white mb-6">Payment Method</h3>
+          <Card3D className="p-6" glowColor="cyan">
+            <HolographicText className="text-xl font-semibold text-white mb-6">Payment Method</HolographicText>
 
             {/* Error Message */}
             {error && (
-              <div className="mb-6 p-4 bg-red-600/20 border border-red-600 rounded-lg flex items-center space-x-2">
+              <div className="mb-6 p-4 bg-red-600/20 border border-red-600 rounded-lg flex items-center space-x-2 neon-border">
                 <AlertCircle className="w-5 h-5 text-red-400" />
                 <span className="text-red-400 text-sm">{error}</span>
               </div>
@@ -595,9 +600,9 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
                   key={method.id}
                   onClick={() => setSelectedMethod(method.id)}
                   disabled={!method.enabled}
-                  className={`p-4 rounded-xl border-2 transition-all text-left cursor-pointer ${
+                  className={`p-4 rounded-xl border-2 transition-all text-left cursor-pointer interactive-element ${
                     selectedMethod === method.id
-                      ? 'border-blue-500 bg-blue-500/20'
+                      ? 'border-blue-500 bg-blue-500/20 neon-border'
                       : method.enabled 
                         ? 'border-gray-600 bg-gray-700/50 hover:border-gray-500'
                         : 'border-gray-700 bg-gray-800 opacity-50 cursor-not-allowed'
@@ -634,7 +639,7 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
               )}
 
               {/* Security Notice */}
-              <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600">
+              <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600 neon-border">
                 <div className="flex items-center space-x-2 text-blue-400 mb-2">
                   <Lock className="w-4 h-4" />
                   <span className="font-medium">Secure Payment</span>
@@ -646,10 +651,11 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
               </div>
 
               {/* Submit Button */}
-              <button
+              <Button3D
                 type="submit"
                 disabled={isProcessing}
-                className="w-full bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white py-4 rounded-xl font-semibold transition-colors flex items-center justify-center space-x-2"
+                variant="primary"
+                className="w-full py-4"
               >
                 {isProcessing ? (
                   <>
@@ -662,16 +668,16 @@ const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPayme
                      'Complete Purchase'}
                   </span>
                 )}
-              </button>
+              </Button3D>
 
               <p className="text-center text-sm text-gray-400">
                 By continuing, you agree to our Terms of Service and Privacy Policy
               </p>
             </form>
-          </div>
+          </Card3D>
         </div>
       </div>
-    </div>
+    </FuturisticScene>
   );
 };
 
