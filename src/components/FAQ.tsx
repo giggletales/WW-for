@@ -1,403 +1,149 @@
-import { useState, useEffect } from 'react';
-import { TradingState, TradeOutcome, Signal } from '../trading/types';
-import { openTrade, closeTrade } from '../trading/tradeManager';
-import { isDailyLossLimitReached } from '../trading/riskManager';
-import { useUser } from '../contexts/UserContext';
-import { useTradingPlan } from '../contexts/TradingPlanContext';
-import api from '../api';
-import ConsentForm from './ConsentForm';
+import React, { useState } from 'react';
+import { ChevronDown, HelpCircle, Zap, Shield, TrendingUp } from 'lucide-react';
 import FuturisticScene from './3D/FuturisticScene';
-import DashboardConcept1 from './DashboardConcept1';
-import DashboardConcept2 from './DashboardConcept2';
-import DashboardConcept3 from './DashboardConcept3';
-import DashboardConcept4 from './DashboardConcept4';
-import { logActivity } from '../api/activity';
+import Card3D from './3D/Card3D';
+import HolographicText from './3D/HolographicText';
+import ScrollReveal from './3D/ScrollReveal';
+import AnimatedBackground from './3D/AnimatedBackground';
+import '../styles/3d-animations.css';
 
-const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
-  const { user } = useUser();
-  const { tradingPlan } = useTradingPlan();
-  const [theme, setTheme] = useState(() => {
-    // Load persisted theme from localStorage
-    const savedTheme = localStorage.getItem('dashboard_selected_concept');
-    return savedTheme || 'concept1';
-  });
-  const [tradingState, setTradingState] = useState<TradingState | null>(null);
-  const [dashboardData, setDashboardData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showConsentForm, setShowConsentForm] = useState(false);
-
-  // Check for consent on mount
-  useEffect(() => {
-    const consentGiven = localStorage.getItem('user_consent_accepted');
-    if (!consentGiven && user?.setupComplete) {
-      setShowConsentForm(true);
-    }
-  }, [user]);
-
-  // Load initial data from API and localStorage
-  useEffect(() => {
-    const initializeData = async () => {
-      if (user?.email) {
-        setIsLoading(true);
-        const stateKey = `trading_state_${user.email}`;
-        
-        // Restore dashboard state from user backup if available
-        const backupData = localStorage.getItem(`user_backup_${user.email}`);
-        if (backupData) {
-          try {
-            const backup = JSON.parse(backupData);
-            if (backup.dashboardState) {
-              // Restore dashboard preferences
-              if (backup.dashboardState.activeTab) {
-                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
-              }
-              if (backup.dashboardState.selectedTimezone) {
-                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
-              }
-              if (backup.dashboardState.preferences) {
-                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
-              }
-            }
-          } catch (error) {
-            console.warn('Could not restore dashboard state:', error);
-          }
-        }
-        
-        // Load data from localStorage first, then try API as enhancement
-        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
-        const localState = localStorage.getItem(stateKey);
-        const questionnaireData = localStorage.getItem('questionnaireAnswers');
-        const riskPlanData = localStorage.getItem('riskManagementPlan');
-        
-        let parsedQuestionnaire = null;
-        let parsedRiskPlan = null;
-        
-        try {
-          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
-          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
-        } catch (parseError) {
-          console.warn('Error parsing questionnaire data, using defaults');
-    <FuturisticScene className="min-h-screen bg-gradient-to-br from-gray-950 via-black to-gray-950 text-white overflow-hidden">
-      <AnimatedBackground />
-        
-
-        <ScrollReveal delay={0.2}>
-          <div className="text-center mb-20">
-            <HolographicText 
-              className="text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-6"
-              glitchEffect={true}
-              dataText="Knowledge Base"
-            >
-              Knowledge Base
-            </HolographicText>
-            <p className="text-xl text-gray-400 max-w-3xl mx-auto leading-relaxed">
-              Your questions, answered. Explore our FAQ to find the information you need to start your journey with TraderEdge Pro.
-            </p>
-          </div>
-        </ScrollReveal>
-          },
-        <div className="max-w-4xl mx-auto">
-            accountBalance: accountValue || parsedRiskPlan?.accountSize || 100000,
-        };
-        
-        // Set dashboard data from localStorage or fallback
-        if (localDashboardData) {
-          try {
-            setDashboardData(JSON.parse(localDashboardData));
-          } catch {
-            setDashboardData(fallbackDashboardData);
-          }
-        } else {
-          setDashboardData(fallbackDashboardData);
-        }
-        
-        // Initialize trading state
-        if (localState) {
-          try {
-            setTradingState(JSON.parse(localState));
-          } catch {
-            // Create new state if parsing fails
-            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
-              ? parsedQuestionnaire?.accountEquity 
-              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
-            const initialState: TradingState = {
-              initialEquity,
-              currentEquity: initialEquity,
-              trades: [],
-              openPositions: [],
-              riskSettings: {
-                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
-                dailyLossLimit: 5,
-                consecutiveLossesLimit: 3,
-              },
-              performanceMetrics: {
-                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
-                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
-                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
-                consecutiveLosses: 0,
-              },
-              dailyStats: { pnl: 0, trades: 0, initialEquity },
-            };
-            setTradingState(initialState);
-            localStorage.setItem(stateKey, JSON.stringify(initialState));
-          }
-        } else {
-          // Create initial state for new users
-          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
-            ? parsedQuestionnaire?.accountEquity 
-            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
-          const initialState: TradingState = {
-            initialEquity,
-            currentEquity: initialEquity,
-            trades: [],
-            openPositions: [],
-            riskSettings: {
-              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
-              dailyLossLimit: 5,
-              consecutiveLossesLimit: 3,
-            },
-            performanceMetrics: {
-              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
-              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
-              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
-              consecutiveLosses: 0,
-            },
-            dailyStats: { pnl: 0, trades: 0, initialEquity },
-          };
-          setTradingState(initialState);
-          localStorage.setItem(stateKey, JSON.stringify(initialState));
-        }
-        
-        try {
-          const response = await api.get('/api/dashboard-data');
-          setDashboardData(response.data);
-        } catch (error) {
-          console.error('Failed to fetch dashboard data from API, using fallback.', error);
-        }
-        
-        // Generate comprehensive mock dashboard data if none exists
-        if (!localDashboardData) {
-          const mockDashboardData = {
-            user: {
-              name: user.name || 'Trader',
-              email: user.email,
-              membershipTier: user.membershipTier || 'professional',
-              joinDate: new Date().toISOString(),
-              lastLogin: new Date().toISOString(),
-            },
-            account: {
-              balance: tradingPlan?.userProfile?.initialBalance || 10000,
-              equity: tradingPlan?.userProfile?.initialBalance || 10000,
-              margin: 0,
-              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
-              marginLevel: 0
-            },
-            performance: {
-              totalPnl: 0,
-              winRate: 0,
-              totalTrades: 0,
-              profitFactor: 0,
-              maxDrawdown: 0
-            },
-            signals: [],
-            news: [],
-            lastUpdated: new Date().toISOString()
-          };
-          
-          setDashboardData(mockDashboardData);
-          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
-        }
-        
-        setIsLoading(false);
+const faqCategories = [
+  {
+    category: 'Getting Started',
+    icon: <HelpCircle className="w-6 h-6 text-blue-400" />,
+    questions: [
+      {
+        question: 'What is TraderEdge Pro and how does it work?',
+        answer: 'TraderEdge Pro is a comprehensive prop firm clearing service that provides personalized trading plans, risk management protocols, and expert guidance to help traders successfully pass prop firm challenges and secure funded accounts.'
+      },
+      {
+        question: 'Which prop firms do you support?',
+        answer: 'We support all major prop firms including FTMO, MyForexFunds, The5ers, FundedNext, and many others. Our system is designed to adapt to any prop firm\'s specific rules and requirements.'
+      },
+      {
+        question: 'How long does it take to get my trading plan?',
+        answer: 'After completing our comprehensive questionnaire, you\'ll receive your personalized trading plan within 24-48 hours. The plan includes detailed strategies, risk parameters, and step-by-step guidance.'
       }
-    };
-    initializeData();
-  }, [user, tradingPlan]);
-
-  // Persist data to localStorage on change
-  useEffect(() => {
-    if (user?.email && tradingState) {
-      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
-    }
-    if (user?.email && dashboardData) {
-      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
-    }
-  }, [tradingState, dashboardData, user?.email]);
-
-  const handleConsentAccept = () => {
-    setShowConsentForm(false);
-  };
-
-  const handleConsentDecline = () => {
-    onLogout();
-  };
-
-  const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
-    if (tradingState) {
-      if (isDailyLossLimitReached(tradingState)) {
-        alert("You have hit your daily loss limit. No more trades are allowed today.");
-        return;
+    ]
+  },
+  {
+    category: 'Trading Plans',
+    icon: <TrendingUp className="w-6 h-6 text-green-400" />,
+    questions: [
+      {
+        question: 'Are the trading plans really personalized?',
+        answer: 'Yes, absolutely. Each plan is created based on your specific prop firm, account size, trading experience, risk tolerance, and personal preferences. No two plans are identical.'
+      },
+      {
+        question: 'Can I modify my trading plan after receiving it?',
+        answer: 'Yes, we offer plan revisions and updates. As you progress or if market conditions change, we can adjust your strategy to ensure continued success.'
+      },
+      {
+        question: 'What if my trading plan doesn\'t work for me?',
+        answer: 'We offer a 30-day money-back guarantee. If you\'re not satisfied with your plan or don\'t see improvement in your trading, we\'ll provide a full refund.'
       }
-      const stateAfterOpen = openTrade(tradingState, signal);
-      const newTrade = stateAfterOpen.openPositions[stateAfterOpen.openPositions.length - 1];
-      const finalState = closeTrade(stateAfterOpen, newTrade.id, outcome, pnl);
-      setTradingState(finalState);
-    }
-  };
-
-  if (isLoading || !user) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
-        <FuturisticBackground />
-        <FuturisticCursor />
-        
-        {/* Futuristic Loading Animation */}
-        <div className="relative z-10 text-center">
-          {/* Main Loading Circle */}
-          <div className="relative mb-8">
-            <div className="w-32 h-32 mx-auto relative">
-              {/* Outer rotating ring */}
-              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
-              {/* Middle rotating ring */}
-              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
-              {/* Inner pulsing core */}
-              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
-              {/* Center dot */}
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
-            </div>
-          </div>
-          
-          {/* Loading Text with Typewriter Effect */}
-          <div className="text-2xl font-bold mb-4">
-            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
-              INITIALIZING DASHBOARD
-            </span>
-          </div>
-          
-          {/* Progress Bars */}
-          <div className="space-y-3 max-w-md mx-auto">
-            <div className="flex items-center space-x-3">
-              <div className="text-cyan-400 text-sm font-mono w-24 text-left">CORE_SYS</div>
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse" style={{width: '85%'}}></div>
-              </div>
-              <div className="text-cyan-400 text-xs font-mono w-8">85%</div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="text-blue-400 text-sm font-mono w-24 text-left">DATA_SYNC</div>
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full animate-pulse" style={{width: '72%'}}></div>
-              </div>
-              <div className="text-blue-400 text-xs font-mono w-8">72%</div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="text-purple-400 text-sm font-mono w-24 text-left">UI_LOAD</div>
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
-              </div>
-              <div className="text-purple-400 text-xs font-mono w-8">91%</div>
-            </div>
-          </div>
-          
-          {/* Status Messages */}
-          <div className="mt-6 text-gray-400 text-sm font-mono">
-            <div className="animate-pulse">» Establishing secure connection...</div>
-            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
-            <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
-          </div>
-          
-          {/* Scanning Effect */}
-          <div className="absolute -inset-4 opacity-30">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
-            <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
-            <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-gradient-to-b from-transparent via-pink-400 to-transparent animate-pulse" style={{animationDelay: '1.5s'}}></div>
-          </div>
-        </div>
-      </div>
-    );
+    ]
+  },
+  {
+    category: 'Risk Management',
+    icon: <Shield className="w-6 h-6 text-purple-400" />,
+    questions: [
+      {
+        question: 'How do you ensure I don\'t blow my account?',
+        answer: 'Our risk management system includes strict position sizing rules, daily loss limits, maximum drawdown protection, and real-time monitoring to prevent account violations.'
+      },
+      {
+        question: 'What happens if I violate a rule?',
+        answer: 'Our system provides early warning alerts before you approach any limits. If a violation occurs, we help you analyze what went wrong and adjust your strategy to prevent future issues.'
+      },
+      {
+        question: 'Do you provide ongoing risk monitoring?',
+        answer: 'Yes, our premium plans include continuous risk monitoring with real-time alerts, weekly performance reviews, and strategy adjustments as needed.'
+      }
+    ]
+  },
+  {
+    category: 'Support & Success',
+    icon: <Zap className="w-6 h-6 text-yellow-400" />,
+    questions: [
+      {
+        question: 'What kind of support do you provide?',
+        answer: 'We offer 24/7 chat support, weekly strategy calls, performance analysis, and access to our community of successful prop firm traders.'
+      },
+      {
+        question: 'What is your success rate?',
+        answer: 'Our clients have a 94% success rate in passing prop firm challenges, significantly higher than the industry average of 10-15%.'
+      },
+      {
+        question: 'Do you guarantee I\'ll pass my challenge?',
+        answer: 'While we can\'t guarantee results (trading involves risk), we do guarantee our commitment to your success with our money-back guarantee and ongoing support.'
+      }
+    ]
   }
+];
 
-  if (!user.setupComplete) {
-    const message = user.membershipTier === 'kickstarter'
-      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
-      : "Please complete the setup process to access your dashboard.";
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
-        <FuturisticBackground />
-        <FuturisticCursor />
-        <div className="relative z-10 text-center">
-          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
-          <p className="text-gray-400">{message}</p>
-        </div>
-      </div>
-    );
-  }
+const FAQ: React.FC = () => {
+  const [open, setOpen] = useState<number | null>(null);
 
-  const renderTheme = () => {
-    const props = {
-      onLogout,
-      tradingState,
-      dashboardData,
-      handleMarkAsTaken,
-      setTradingState,
-      user,
-    };
-    switch (theme) {
-      case 'concept1':
-        return <DashboardConcept1 {...props} />;
-      case 'concept2':
-        return <DashboardConcept2 {...props} />;
-      case 'concept3':
-        return <DashboardConcept3 {...props} />;
-      case 'concept4':
-        return <DashboardConcept4 {...props} />;
-      default:
-        return <DashboardConcept1 {...props} />;
-    }
+  const toggle = (index: number) => {
+    setOpen(open === index ? null : index);
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
-      <ConsentForm 
-        isOpen={showConsentForm}
-        onAccept={handleConsentAccept}
-        onDecline={handleConsentDecline}
-      />
-      <div className="theme-switcher fixed top-4 right-4 z-50">
-            <ScrollReveal key={catIndex} delay={0.2 + catIndex * 0.1}>
-              <div className="mb-12">
-                <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
-                  <div className="float-animation">{category.icon}</div>
-                  <HolographicText>{category.category}</HolographicText>
-                </h2>
-                <div className="space-y-4">
-                  {category.questions.map((faq, index) => (
-                    <Card3D key={index} className="overflow-hidden interactive-element" glowColor="cyan">
-                      <button
-                        onClick={() => toggle(catIndex * 10 + index)}
-                        className="w-full text-left flex justify-between items-center p-6 focus:outline-none"
-                      >
-                        <span className="text-xl font-medium text-white">{faq.question}</span>
-                        <ChevronDown className={`w-6 h-6 text-blue-400 transform transition-transform ${open === (catIndex * 10 + index) ? 'rotate-180' : ''}`} />
-                      </button>
-                      <div className={`transition-all duration-500 ease-in-out ${open === (catIndex * 10 + index) ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'}`}>
-                        <div className="p-6 pt-0">
-                          <p className="text-gray-400 leading-relaxed">{faq.answer}</p>
+    <FuturisticScene className="min-h-screen bg-gradient-to-br from-gray-950 via-black to-gray-950 text-white overflow-hidden">
+      <AnimatedBackground />
+      
+      <div className="pt-24 pb-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
+          <ScrollReveal delay={0.2}>
+            <div className="text-center mb-20">
+              <HolographicText 
+                className="text-7xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-purple-500 mb-6"
+                glitchEffect={true}
+                dataText="Knowledge Base"
+              >
+                Knowledge Base
+              </HolographicText>
+              <p className="text-xl text-gray-400 max-w-3xl mx-auto leading-relaxed">
+                Your questions, answered. Explore our FAQ to find the information you need to start your journey with TraderEdge Pro.
+              </p>
+            </div>
+          </ScrollReveal>
+
+          <div className="max-w-4xl mx-auto">
+            {faqCategories.map((category, catIndex) => (
+              <ScrollReveal key={catIndex} delay={0.2 + catIndex * 0.1}>
+                <div className="mb-12">
+                  <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
+                    <div className="float-animation">{category.icon}</div>
+                    <HolographicText>{category.category}</HolographicText>
+                  </h2>
+                  <div className="space-y-4">
+                    {category.questions.map((faq, index) => (
+                      <Card3D key={index} className="overflow-hidden interactive-element" glowColor="cyan">
+                        <button
+                          onClick={() => toggle(catIndex * 10 + index)}
+                          className="w-full text-left flex justify-between items-center p-6 focus:outline-none"
+                        >
+                          <span className="text-xl font-medium text-white">{faq.question}</span>
+                          <ChevronDown className={`w-6 h-6 text-blue-400 transform transition-transform ${open === (catIndex * 10 + index) ? 'rotate-180' : ''}`} />
+                        </button>
+                        <div className={`transition-all duration-500 ease-in-out ${open === (catIndex * 10 + index) ? 'max-h-screen opacity-100' : 'max-h-0 opacity-0'}`}>
+                          <div className="p-6 pt-0">
+                            <p className="text-gray-400 leading-relaxed">{faq.answer}</p>
+                          </div>
                         </div>
-                      </div>
-                    </Card3D>
-                  ))}
+                      </Card3D>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            </ScrollReveal>
-        </select>
+              </ScrollReveal>
+            ))}
+          </div>
+        </div>
       </div>
-      {renderTheme()}
     </FuturisticScene>
   );
 };
 
-export default Dashboard;
+export default FAQ;

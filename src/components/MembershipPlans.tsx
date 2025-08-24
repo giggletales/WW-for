@@ -1,248 +1,105 @@
-import { useState, useEffect } from 'react';
-import { TradingState, TradeOutcome, Signal } from '../trading/types';
-import { openTrade, closeTrade } from '../trading/tradeManager';
-import { isDailyLossLimitReached } from '../trading/riskManager';
-import { useUser } from '../contexts/UserContext';
-import { useTradingPlan } from '../contexts/TradingPlanContext';
-import api from '../api';
-import ConsentForm from './ConsentForm';
+import React from 'react';
+import { Link } from 'react-router-dom';
+import { Check, ArrowLeft, Star, Zap, Crown, Gift } from 'lucide-react';
 import FuturisticScene from './3D/FuturisticScene';
-import DashboardConcept1 from './DashboardConcept1';
-import DashboardConcept2 from './DashboardConcept2';
-import DashboardConcept3 from './DashboardConcept3';
-import DashboardConcept4 from './DashboardConcept4';
-import { logActivity } from '../api/activity';
+import Card3D from './3D/Card3D';
+import HolographicText from './3D/HolographicText';
+import Button3D from './3D/Button3D';
+import ScrollReveal from './3D/ScrollReveal';
+import AnimatedBackground from './3D/AnimatedBackground';
+import '../styles/3d-animations.css';
 
-const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
-  const { user } = useUser();
-  const { tradingPlan } = useTradingPlan();
-  const [theme, setTheme] = useState(() => {
-    // Load persisted theme from localStorage
-    const savedTheme = localStorage.getItem('dashboard_selected_concept');
-    return savedTheme || 'concept1';
-  });
-  const [tradingState, setTradingState] = useState<TradingState | null>(null);
-  const [dashboardData, setDashboardData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showConsentForm, setShowConsentForm] = useState(false);
+const plans = [
+  {
+    name: 'Starter',
+    price: 97,
+    period: 'one-time',
+    description: 'Perfect for new traders starting their prop firm journey',
+    icon: <Star className="w-8 h-8" />,
+    color: 'border-blue-500',
+    popular: false,
+    features: [
+      'Personalized Trading Plan',
+      'Basic Risk Management Protocol',
+      'Email Support',
+      'Community Access',
+      'Trading Journal Template',
+      '30-Day Money Back Guarantee'
+    ]
+  },
+  {
+    name: 'Professional',
+    price: 197,
+    period: 'one-time',
+    description: 'Most popular choice for serious traders',
+    icon: <Zap className="w-8 h-8" />,
+    color: 'border-yellow-500',
+    popular: true,
+    features: [
+      'Everything in Starter',
+      'Advanced Risk Management',
+      'Weekly Strategy Calls',
+      'Priority Support',
+      'Performance Analytics',
+      'Plan Revisions (2x)',
+      'Trading Psychology Guide',
+      'Market Analysis Reports'
+    ]
+  },
+  {
+    name: 'Elite',
+    price: 397,
+    period: 'one-time',
+    description: 'Premium service for professional traders',
+    icon: <Crown className="w-8 h-8" />,
+    color: 'border-purple-500',
+    popular: false,
+    features: [
+      'Everything in Professional',
+      '1-on-1 Mentorship Sessions',
+      '24/7 Priority Support',
+      'Unlimited Plan Revisions',
+      'Custom Risk Algorithms',
+      'Live Trading Room Access',
+      'Monthly Performance Review',
+      'Direct Trader Hotline'
+    ]
+  },
+  {
+    name: 'Free Access',
+    price: 0,
+    period: 'via affiliate',
+    description: 'Get started with our affiliate program',
+    icon: <Gift className="w-8 h-8" />,
+    color: 'border-green-500',
+    popular: false,
+    isAffiliate: true,
+    features: [
+      'Basic Trading Plan',
+      'Community Access',
+      'Educational Resources',
+      'Email Support',
+      'Upgrade Anytime',
+      'No Credit Card Required'
+    ]
+  }
+];
 
-  // Check for consent on mount
-  useEffect(() => {
-    const consentGiven = localStorage.getItem('user_consent_accepted');
-    if (!consentGiven && user?.setupComplete) {
-      setShowConsentForm(true);
+const MembershipPlans: React.FC = () => {
+  const handlePlanSelect = (plan: any) => {
+    if (plan.isAffiliate) {
+      window.location.href = '/affiliate-links';
+    } else {
+      window.location.href = `/signup?plan=${plan.name.toLowerCase()}`;
     }
-  }, [user]);
-
-  // Load initial data from API and localStorage
-  useEffect(() => {
-    const initializeData = async () => {
-      if (user?.email) {
-        setIsLoading(true);
-        const stateKey = `trading_state_${user.email}`;
-        
-        // Restore dashboard state from user backup if available
-        const backupData = localStorage.getItem(`user_backup_${user.email}`);
-        if (backupData) {
-          try {
-            const backup = JSON.parse(backupData);
-            if (backup.dashboardState) {
-              // Restore dashboard preferences
-              if (backup.dashboardState.activeTab) {
-                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
-              }
-              if (backup.dashboardState.selectedTimezone) {
-                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
-              }
-              if (backup.dashboardState.preferences) {
-                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
-              }
-            }
-          } catch (error) {
-            console.warn('Could not restore dashboard state:', error);
-          }
-        }
-        
-        // Load data from localStorage first, then try API as enhancement
-        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
-        const localState = localStorage.getItem(stateKey);
-        const questionnaireData = localStorage.getItem('questionnaireAnswers');
-        const riskPlanData = localStorage.getItem('riskManagementPlan');
-        
-        let parsedQuestionnaire = null;
-        let parsedRiskPlan = null;
-        
-        try {
-          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
-          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
-        } catch (parseError) {
-          console.warn('Error parsing questionnaire data, using defaults');
-        }
-        
-        // Create dashboard data from questionnaire if available
-        const accountValue = parsedQuestionnaire?.hasAccount === 'yes' 
-          ? parsedQuestionnaire?.accountEquity 
-          : parsedQuestionnaire?.accountSize;
-
-        const fallbackDashboardData = {
-          userProfile: {
-            propFirm: parsedQuestionnaire?.propFirm || 'Not Set',
-            accountType: parsedQuestionnaire?.accountType || 'Not Set',
-            accountSize: accountValue || 100000,
-            riskPerTrade: `${parsedQuestionnaire?.riskPercentage || 1}%`,
-            experience: parsedQuestionnaire?.experience || 'intermediate',
-            uniqueId: user?.uniqueId || 'Not Set'
-          },
-          performance: {
-            accountBalance: accountValue || parsedRiskPlan?.accountSize || 100000,
-            totalPnl: 0,
-            winRate: 0,
-            totalTrades: 0
-          },
-          riskProtocol: {
-            maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
-            riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
-            maxDrawdown: '10%'
-          }
-        };
-        
-        // Set dashboard data from localStorage or fallback
-        if (localDashboardData) {
-          try {
-            setDashboardData(JSON.parse(localDashboardData));
-          } catch {
-            setDashboardData(fallbackDashboardData);
-          }
-        } else {
-          setDashboardData(fallbackDashboardData);
-        }
-        
-        // Initialize trading state
-        if (localState) {
-          try {
-            setTradingState(JSON.parse(localState));
-          } catch {
-            // Create new state if parsing fails
-            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
-              ? parsedQuestionnaire?.accountEquity 
-              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
-            const initialState: TradingState = {
-              initialEquity,
-              currentEquity: initialEquity,
-              trades: [],
-              openPositions: [],
-              riskSettings: {
-                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
-                dailyLossLimit: 5,
-                consecutiveLossesLimit: 3,
-              },
-              performanceMetrics: {
-                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
-                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
-                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
-                consecutiveLosses: 0,
-              },
-              dailyStats: { pnl: 0, trades: 0, initialEquity },
-            };
-            setTradingState(initialState);
-            localStorage.setItem(stateKey, JSON.stringify(initialState));
-          }
-        } else {
-          // Create initial state for new users
-          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
-            ? parsedQuestionnaire?.accountEquity 
-            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
-          const initialState: TradingState = {
-            initialEquity,
-            currentEquity: initialEquity,
-            trades: [],
-            openPositions: [],
-            riskSettings: {
-              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
-              dailyLossLimit: 5,
-              consecutiveLossesLimit: 3,
-            },
-            performanceMetrics: {
-              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
-              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
-              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
-              consecutiveLosses: 0,
-            },
-            dailyStats: { pnl: 0, trades: 0, initialEquity },
-          };
-          setTradingState(initialState);
-          localStorage.setItem(stateKey, JSON.stringify(initialState));
-        }
-        
-        try {
-          const response = await api.get('/api/dashboard-data');
-          setDashboardData(response.data);
-        } catch (error) {
-          console.error('Failed to fetch dashboard data from API, using fallback.', error);
-        }
-        
-        // Generate comprehensive mock dashboard data if none exists
-        if (!localDashboardData) {
-          const mockDashboardData = {
-            user: {
-              name: user.name || 'Trader',
-              email: user.email,
-              membershipTier: user.membershipTier || 'professional',
-              joinDate: new Date().toISOString(),
-              lastLogin: new Date().toISOString(),
-            },
-            account: {
-              balance: tradingPlan?.userProfile?.initialBalance || 10000,
-              equity: tradingPlan?.userProfile?.initialBalance || 10000,
-              margin: 0,
-              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
-              marginLevel: 0
-            },
-            performance: {
-              totalPnl: 0,
-              winRate: 0,
-              totalTrades: 0,
-              profitFactor: 0,
-              maxDrawdown: 0
-            },
-            signals: [],
-            news: [],
-            lastUpdated: new Date().toISOString()
-          };
-          
-          setDashboardData(mockDashboardData);
-          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
-        }
-        
-        setIsLoading(false);
-      }
-    };
-    initializeData();
-  }, [user, tradingPlan]);
-
-  // Persist data to localStorage on change
-  useEffect(() => {
-    if (user?.email && tradingState) {
-      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
-    }
-    if (user?.email && dashboardData) {
-      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
-    }
-  }, [tradingState, dashboardData, user?.email]);
-
-  const handleConsentAccept = () => {
-    setShowConsentForm(false);
   };
 
-  const handleConsentDecline = () => {
-    onLogout();
+  return (
     <FuturisticScene className="min-h-screen">
       <AnimatedBackground />
-
       
-        return;
-      }
-      const stateAfterOpen = openTrade(tradingState, signal);
+      <div className="pt-24 pb-20 px-4 sm:px-6 lg:px-8">
+        <div className="max-w-7xl mx-auto">
           <ScrollReveal delay={0.2}>
             <div className="text-center mb-16">
               <Link to="/" className="inline-flex items-center space-x-2 text-blue-500 hover:text-blue-400 mb-8 nav-item-3d">
@@ -262,10 +119,9 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
               </p>
             </div>
           </ScrollReveal>
-        
-        {/* Futuristic Loading Animation */}
-        <div className="relative z-10 text-center">
-          {/* Main Loading Circle */}
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+            {plans.map((plan, index) => (
               <ScrollReveal key={index} delay={0.2 + index * 0.1}>
                 <Card3D
                   className={`relative p-6 transition-transform duration-300 ${
@@ -329,82 +185,37 @@ const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
                   )}
                 </Card3D>
               </ScrollReveal>
-            <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-gradient-to-b from-transparent via-pink-400 to-transparent animate-pulse" style={{animationDelay: '1.5s'}}></div>
+            ))}
           </div>
+
+          <ScrollReveal delay={0.8}>
+            <div className="text-center mt-16">
+              <Card3D className="p-8 max-w-2xl mx-auto" glowColor="green">
+                <h3 className="text-2xl font-bold text-white mb-4">30-Day Money Back Guarantee</h3>
+                <p className="text-gray-400 mb-6">
+                  Not satisfied with your results? Get a full refund within 30 days, no questions asked.
+                </p>
+                <div className="flex items-center justify-center space-x-6 text-sm text-gray-400">
+                  <div className="flex items-center space-x-2">
+                    <Check className="w-4 h-4 text-green-400" />
+                    <span>Secure Payment</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Check className="w-4 h-4 text-green-400" />
+                    <span>Instant Access</span>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <Check className="w-4 h-4 text-green-400" />
+                    <span>Expert Support</span>
+                  </div>
+                </div>
+              </Card3D>
+            </div>
+          </ScrollReveal>
         </div>
       </div>
-    );
-  }
-
-  if (!user.setupComplete) {
-    const message = user.membershipTier === 'kickstarter'
-      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
-      : "Please complete the setup process to access your dashboard.";
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
-        <FuturisticBackground />
-        <FuturisticCursor />
-        <div className="relative z-10 text-center">
-          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
-          <p className="text-gray-400">{message}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const renderTheme = () => {
-    const props = {
-      onLogout,
-      tradingState,
-      dashboardData,
-      handleMarkAsTaken,
-      setTradingState,
-      user,
-    };
-    switch (theme) {
-      case 'concept1':
-        return <DashboardConcept1 {...props} />;
-      case 'concept2':
-        return <DashboardConcept2 {...props} />;
-      case 'concept3':
-        return <DashboardConcept3 {...props} />;
-      case 'concept4':
-        return <DashboardConcept4 {...props} />;
-      default:
-        return <DashboardConcept1 {...props} />;
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
-      <ConsentForm 
-        isOpen={showConsentForm}
-        onAccept={handleConsentAccept}
-        onDecline={handleConsentDecline}
-      />
-      <div className="theme-switcher fixed top-4 right-4 z-50">
-        <select 
-          onChange={(e) => {
-            const newTheme = e.target.value;
-            setTheme(newTheme);
-            // Persist theme selection to localStorage
-            localStorage.setItem('dashboard_selected_concept', newTheme);
-            logActivity('theme_change', { theme: newTheme });
-          }}
-          value={theme}
-          className="bg-gray-800 text-white p-2 rounded border border-gray-600"
-        >
-          <option value="concept1">Concept 1</option>
-          <option value="concept2">Concept 2</option>
-          <option value="concept3">Concept 3</option>
-          <option value="concept4">Concept 4</option>
-        </select>
-      </div>
-      {renderTheme()}
     </FuturisticScene>
   );
 };
 
-export default Dashboard;
+export default MembershipPlans;

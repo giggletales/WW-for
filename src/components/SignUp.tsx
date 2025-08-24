@@ -1,399 +1,251 @@
-import { useState, useEffect } from 'react';
-import { TradingState, TradeOutcome, Signal } from '../trading/types';
-import { openTrade, closeTrade } from '../trading/tradeManager';
-import { isDailyLossLimitReached } from '../trading/riskManager';
+import React, { useState } from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { ArrowLeft, Mail, Lock, User, Eye, EyeOff, TrendingUp } from 'lucide-react';
+import FuturisticScene from './3D/FuturisticScene';
+import Card3D from './3D/Card3D';
+import HolographicText from './3D/HolographicText';
+import Button3D from './3D/Button3D';
+import AnimatedBackground from './3D/AnimatedBackground';
 import { useUser } from '../contexts/UserContext';
-import { useTradingPlan } from '../contexts/TradingPlanContext';
-import api from '../api';
-import ConsentForm from './ConsentForm';
-import FuturisticBackground from './FuturisticBackground';
-import FuturisticCursor from './FuturisticCursor';
-import DashboardConcept1 from './DashboardConcept1';
-import DashboardConcept2 from './DashboardConcept2';
-import DashboardConcept3 from './DashboardConcept3';
-import DashboardConcept4 from './DashboardConcept4';
-import { logActivity } from '../api/activity';
+import '../styles/3d-animations.css';
 
-const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
-  const { user } = useUser();
-  const { tradingPlan } = useTradingPlan();
-  const [theme, setTheme] = useState(() => {
-    // Load persisted theme from localStorage
-    const savedTheme = localStorage.getItem('dashboard_selected_concept');
-    return savedTheme || 'concept1';
+const SignUp: React.FC = () => {
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    password: '',
+    confirmPassword: ''
   });
-  const [tradingState, setTradingState] = useState<TradingState | null>(null);
-  const [dashboardData, setDashboardData] = useState<any>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [showConsentForm, setShowConsentForm] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState('');
+  
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { login } = useUser();
+  
+  const selectedPlan = location.state?.selectedPlan;
 
-  // Check for consent on mount
-  useEffect(() => {
-    const consentGiven = localStorage.getItem('user_consent_accepted');
-    if (!consentGiven && user?.setupComplete) {
-      setShowConsentForm(true);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (formData.password !== formData.confirmPassword) {
+      setError('Passwords do not match');
+      return;
     }
-  }, [user]);
 
-  // Load initial data from API and localStorage
-  useEffect(() => {
-    const initializeData = async () => {
-      if (user?.email) {
-        setIsLoading(true);
-        const stateKey = `trading_state_${user.email}`;
-        
-        // Restore dashboard state from user backup if available
-        const backupData = localStorage.getItem(`user_backup_${user.email}`);
-        if (backupData) {
-          try {
-            const backup = JSON.parse(backupData);
-            if (backup.dashboardState) {
-              // Restore dashboard preferences
-              if (backup.dashboardState.activeTab) {
-                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
-              }
-              if (backup.dashboardState.selectedTimezone) {
-                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
-              }
-              if (backup.dashboardState.preferences) {
-                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
-              }
-            }
-          } catch (error) {
-            console.warn('Could not restore dashboard state:', error);
-          }
-        }
-        
-        // Load data from localStorage first, then try API as enhancement
-        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
-        const localState = localStorage.getItem(stateKey);
-        const questionnaireData = localStorage.getItem('questionnaireAnswers');
-        const riskPlanData = localStorage.getItem('riskManagementPlan');
-        
-        let parsedQuestionnaire = null;
-        let parsedRiskPlan = null;
-        
-        try {
-          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
-          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
-        } catch (parseError) {
-          console.warn('Error parsing questionnaire data, using defaults');
-        }
-        
-        // Create dashboard data from questionnaire if available
-        const accountValue = parsedQuestionnaire?.hasAccount === 'yes' 
-          ? parsedQuestionnaire?.accountEquity 
-          : parsedQuestionnaire?.accountSize;
+    if (formData.password.length < 6) {
+      setError('Password must be at least 6 characters');
+      return;
+    }
 
-        const fallbackDashboardData = {
-          userProfile: {
-            propFirm: parsedQuestionnaire?.propFirm || 'Not Set',
-            accountType: parsedQuestionnaire?.accountType || 'Not Set',
-            accountSize: accountValue || 100000,
-            riskPerTrade: `${parsedQuestionnaire?.riskPercentage || 1}%`,
-            experience: parsedQuestionnaire?.experience || 'intermediate',
-            uniqueId: user?.uniqueId || 'Not Set'
-          },
-          performance: {
-            accountBalance: accountValue || parsedRiskPlan?.accountSize || 100000,
-            totalPnl: 0,
-            winRate: 0,
-            totalTrades: 0
-          },
-          riskProtocol: {
-            maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
-            riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
-            maxDrawdown: '10%'
-          }
-        };
-        
-        // Set dashboard data from localStorage or fallback
-        if (localDashboardData) {
-          try {
-            setDashboardData(JSON.parse(localDashboardData));
-          } catch {
-            setDashboardData(fallbackDashboardData);
-          }
-        } else {
-          setDashboardData(fallbackDashboardData);
-        }
-        
-        // Initialize trading state
-        if (localState) {
-          try {
-            setTradingState(JSON.parse(localState));
-          } catch {
-            // Create new state if parsing fails
-            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
-              ? parsedQuestionnaire?.accountEquity 
-              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
-            const initialState: TradingState = {
-              initialEquity,
-              currentEquity: initialEquity,
-              trades: [],
-              openPositions: [],
-              riskSettings: {
-                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
-                dailyLossLimit: 5,
-                consecutiveLossesLimit: 3,
-              },
-              performanceMetrics: {
-                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
-                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
-                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
-                consecutiveLosses: 0,
-              },
-              dailyStats: { pnl: 0, trades: 0, initialEquity },
-            };
-            setTradingState(initialState);
-            localStorage.setItem(stateKey, JSON.stringify(initialState));
-          }
-        } else {
-          // Create initial state for new users
-          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
-            ? parsedQuestionnaire?.accountEquity 
-            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
-          const initialState: TradingState = {
-            initialEquity,
-            currentEquity: initialEquity,
-            trades: [],
-            openPositions: [],
-            riskSettings: {
-              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
-              dailyLossLimit: 5,
-              consecutiveLossesLimit: 3,
-            },
-            performanceMetrics: {
-              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
-              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
-              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
-              consecutiveLosses: 0,
-            },
-            dailyStats: { pnl: 0, trades: 0, initialEquity },
-          };
-          setTradingState(initialState);
-          localStorage.setItem(stateKey, JSON.stringify(initialState));
-        }
-        
-        try {
-          const response = await api.get('/api/dashboard-data');
-          setDashboardData(response.data);
-        } catch (error) {
-          console.error('Failed to fetch dashboard data from API, using fallback.', error);
-        }
-        
-        // Generate comprehensive mock dashboard data if none exists
-        if (!localDashboardData) {
-          const mockDashboardData = {
-            user: {
-              name: user.name || 'Trader',
-              email: user.email,
-              membershipTier: user.membershipTier || 'professional',
-              joinDate: new Date().toISOString(),
-              lastLogin: new Date().toISOString(),
-            },
-            account: {
-              balance: tradingPlan?.userProfile?.initialBalance || 10000,
-              equity: tradingPlan?.userProfile?.initialBalance || 10000,
-              margin: 0,
-              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
-              marginLevel: 0
-            },
-            performance: {
-              totalPnl: 0,
-              winRate: 0,
-              totalTrades: 0,
-              profitFactor: 0,
-              maxDrawdown: 0
-            },
-            signals: [],
-            news: [],
-            lastUpdated: new Date().toISOString()
-          };
-          
-          setDashboardData(mockDashboardData);
-          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
-        }
-        
-        setIsLoading(false);
+    setIsLoading(true);
+    setError('');
+
+    try {
+      // Simulate API call
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Create user object
+      const user = {
+        id: Date.now().toString(),
+        name: formData.name,
+        email: formData.email,
+        membershipTier: selectedPlan?.name.toLowerCase() || 'professional',
+        setupComplete: false,
+        uniqueId: `TEP-${Date.now()}`
+      };
+
+      // Login user
+      login(user);
+      
+      // Navigate to questionnaire or payment
+      if (selectedPlan) {
+        navigate('/questionnaire', { state: { fromPayment: true, plan: selectedPlan } });
+      } else {
+        navigate('/membership');
       }
-    };
-    initializeData();
-  }, [user, tradingPlan]);
-
-  // Persist data to localStorage on change
-  useEffect(() => {
-    if (user?.email && tradingState) {
-      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
-    }
-    if (user?.email && dashboardData) {
-      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
-    }
-  }, [tradingState, dashboardData, user?.email]);
-
-  const handleConsentAccept = () => {
-    setShowConsentForm(false);
-  };
-
-  const handleConsentDecline = () => {
-    onLogout();
-  };
-
-  const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
-    if (tradingState) {
-      if (isDailyLossLimitReached(tradingState)) {
-        alert("You have hit your daily loss limit. No more trades are allowed today.");
-        return;
-      }
-      const stateAfterOpen = openTrade(tradingState, signal);
-      const newTrade = stateAfterOpen.openPositions[stateAfterOpen.openPositions.length - 1];
-      const finalState = closeTrade(stateAfterOpen, newTrade.id, outcome, pnl);
-      setTradingState(finalState);
-    }
-  };
-
-  if (isLoading || !user) {
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
-        <FuturisticBackground />
-        <FuturisticCursor />
-        
-        {/* Futuristic Loading Animation */}
-        <div className="relative z-10 text-center">
-          {/* Main Loading Circle */}
-          <div className="relative mb-8">
-            <div className="w-32 h-32 mx-auto relative">
-              {/* Outer rotating ring */}
-              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
-              {/* Middle rotating ring */}
-              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
-              {/* Inner pulsing core */}
-              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
-              {/* Center dot */}
-              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
-            </div>
-          </div>
-          
-          {/* Loading Text with Typewriter Effect */}
-          <div className="text-2xl font-bold mb-4">
-            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
-              INITIALIZING DASHBOARD
-            </span>
-          </div>
-          
-          {/* Progress Bars */}
-          <div className="space-y-3 max-w-md mx-auto">
-            <div className="flex items-center space-x-3">
-              <div className="text-cyan-400 text-sm font-mono w-24 text-left">CORE_SYS</div>
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse" style={{width: '85%'}}></div>
-              </div>
-              <div className="text-cyan-400 text-xs font-mono w-8">85%</div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="text-blue-400 text-sm font-mono w-24 text-left">DATA_SYNC</div>
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full animate-pulse" style={{width: '72%'}}></div>
-              </div>
-              <div className="text-blue-400 text-xs font-mono w-8">72%</div>
-            </div>
-            <div className="flex items-center space-x-3">
-              <div className="text-purple-400 text-sm font-mono w-24 text-left">UI_LOAD</div>
-              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
-              </div>
-              <div className="text-purple-400 text-xs font-mono w-8">91%</div>
-            </div>
-          </div>
-          
-          {/* Status Messages */}
-          <div className="mt-6 text-gray-400 text-sm font-mono">
-            <div className="animate-pulse">» Establishing secure connection...</div>
-            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
-            <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
-          </div>
-          
-          {/* Scanning Effect */}
-          <div className="absolute -inset-4 opacity-30">
-            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
-            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
-            <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
-            <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-gradient-to-b from-transparent via-pink-400 to-transparent animate-pulse" style={{animationDelay: '1.5s'}}></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (!user.setupComplete) {
-    const message = user.membershipTier === 'kickstarter'
-      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
-      : "Please complete the setup process to access your dashboard.";
-    return (
-      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
-        <FuturisticBackground />
-        <FuturisticCursor />
-        <div className="relative z-10 text-center">
-          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
-          <p className="text-gray-400">{message}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const renderTheme = () => {
-    const props = {
-      onLogout,
-      tradingState,
-      dashboardData,
-      handleMarkAsTaken,
-      setTradingState,
-      user,
-    };
-    switch (theme) {
-      case 'concept1':
-        return <DashboardConcept1 {...props} />;
-      case 'concept2':
-        return <DashboardConcept2 {...props} />;
-      case 'concept3':
-        return <DashboardConcept3 {...props} />;
-      case 'concept4':
-        return <DashboardConcept4 {...props} />;
-      default:
-        return <DashboardConcept1 {...props} />;
+    } catch (error) {
+      setError('Failed to create account. Please try again.');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 font-inter relative">
-      <FuturisticBackground />
-      <FuturisticCursor />
-      <ConsentForm 
-        isOpen={showConsentForm}
-        onAccept={handleConsentAccept}
-        onDecline={handleConsentDecline}
-      />
-      <div className="theme-switcher fixed top-4 right-4 z-50">
-        <select 
-          onChange={(e) => {
-            const newTheme = e.target.value;
-            setTheme(newTheme);
-            // Persist theme selection to localStorage
-            localStorage.setItem('dashboard_selected_concept', newTheme);
-            logActivity('theme_change', { theme: newTheme });
-          }}
-          value={theme}
-          className="bg-gray-800 text-white p-2 rounded border border-gray-600"
-        >
-          <option value="concept1">Concept 1</option>
-          <option value="concept2">Concept 2</option>
-          <option value="concept3">Concept 3</option>
-          <option value="concept4">Concept 4</option>
-        </select>
+    <FuturisticScene className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
+      <AnimatedBackground />
+      
+      <div className="flex items-center justify-center px-4 py-12">
+        <div className="max-w-md w-full">
+          {/* Header */}
+          <div className="text-center mb-8">
+            <Link 
+              to={selectedPlan ? "/membership" : "/"} 
+              className="inline-flex items-center space-x-2 text-blue-400 hover:text-blue-300 mb-8 nav-item-3d"
+            >
+              <ArrowLeft className="w-5 h-5" />
+              <span>Back to {selectedPlan ? "Plans" : "Home"}</span>
+            </Link>
+            
+            <div className="flex items-center justify-center space-x-2 mb-6">
+              <TrendingUp className="w-8 h-8 text-blue-400 float-animation" />
+              <HolographicText className="text-2xl font-bold text-white">TraderEdge Pro</HolographicText>
+            </div>
+
+            <HolographicText className="text-3xl font-bold text-white mb-2">
+              Create Your Account
+            </HolographicText>
+            <p className="text-gray-400">Join thousands of successful prop firm traders</p>
+          </div>
+
+          {/* Selected Plan Summary */}
+          {selectedPlan && (
+            <Card3D className="p-4 mb-6 neon-border" glowColor="blue">
+              <div className="text-center">
+                <div className="text-blue-400 font-semibold text-lg">{selectedPlan.name} Plan</div>
+                <div className="text-white text-2xl font-bold counter-3d">${selectedPlan.price}/{selectedPlan.period}</div>
+                <div className="text-blue-300 text-sm">Continue with your selected plan</div>
+              </div>
+            </Card3D>
+          )}
+
+          {/* Form */}
+          <Card3D className="p-8 form-3d" glowColor="cyan">
+            <form onSubmit={handleSubmit} className="space-y-6">
+              {error && (
+                <div className="p-4 bg-red-600/20 border border-red-600 rounded-lg text-red-400 text-sm neon-border">
+                  {error}
+                </div>
+              )}
+
+              <div className="space-y-6">
+                {/* Name */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Full Name</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <input
+                      type="text"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="input-3d w-full pl-10 pr-4 py-3"
+                      placeholder="Enter your full name"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Email Address</label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <input
+                      type="email"
+                      value={formData.email}
+                      onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                      className="input-3d w-full pl-10 pr-4 py-3"
+                      placeholder="Enter your email address"
+                      required
+                    />
+                  </div>
+                </div>
+
+                {/* Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Password</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      value={formData.password}
+                      onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                      className="input-3d w-full pl-10 pr-12 py-3"
+                      placeholder="Create a password"
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 interactive-element"
+                    >
+                      {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Confirm Password */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={formData.confirmPassword}
+                      onChange={(e) => setFormData({ ...formData, confirmPassword: e.target.value })}
+                      className="input-3d w-full pl-10 pr-12 py-3"
+                      placeholder="Confirm your password"
+                      required
+                      minLength={6}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-300 interactive-element"
+                    >
+                      {showConfirmPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Submit Button */}
+                <Button3D
+                  type="submit"
+                  disabled={isLoading}
+                  variant="primary"
+                  className="w-full"
+                >
+                  {isLoading ? (
+                    <>
+                      <div className="w-6 h-6 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      Creating Account...
+                    </>
+                  ) : (
+                    'Create Account'
+                  )}
+                </Button3D>
+              </div>
+            </form>
+          </Card3D>
+
+          {/* Sign In Link */}
+          <div className="text-center mt-6">
+            <p className="text-gray-400">
+              Already have an account?{' '}
+              <Link 
+                to="/signin" 
+                state={{ selectedPlan }}
+                className="text-blue-400 hover:text-blue-300 font-semibold nav-item-3d"
+              >
+                Sign in
+              </Link>
+            </p>
+          </div>
+
+          {/* Security Notice */}
+          <Card3D className="mt-6 p-4" glowColor="green">
+            <div className="text-center text-xs text-gray-400">
+              <p>🔒 Your data is protected with industry-standard encryption</p>
+              {selectedPlan && <p>Continue with your {selectedPlan.name} plan after account creation</p>}
+            </div>
+          </Card3D>
+        </div>
       </div>
-      {renderTheme()}
-    </div>
+    </FuturisticScene>
   );
 };
 
-export default Dashboard;
+export default SignUp;
