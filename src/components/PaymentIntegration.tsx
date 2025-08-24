@@ -1,688 +1,399 @@
-import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Bitcoin, Check, Shield, Lock, AlertCircle, AlertTriangle, CheckCircle } from 'lucide-react';
-import Card3D from './3D/Card3D';
-import Button3D from './3D/Button3D';
-import HolographicText from './3D/HolographicText';
-import '../styles/3d-animations.css';
+import { useState, useEffect } from 'react';
+import { TradingState, TradeOutcome, Signal } from '../trading/types';
+import { openTrade, closeTrade } from '../trading/tradeManager';
+import { isDailyLossLimitReached } from '../trading/riskManager';
+import { useUser } from '../contexts/UserContext';
+import { useTradingPlan } from '../contexts/TradingPlanContext';
+import api from '../api';
+import ConsentForm from './ConsentForm';
+import FuturisticBackground from './FuturisticBackground';
+import FuturisticCursor from './FuturisticCursor';
+import DashboardConcept1 from './DashboardConcept1';
+import DashboardConcept2 from './DashboardConcept2';
+import DashboardConcept3 from './DashboardConcept3';
+import DashboardConcept4 from './DashboardConcept4';
+import { logActivity } from '../api/activity';
 
-// Type declarations for window properties
-declare global {
-  interface Window {
-    ApplePaySession: any;
-    google: any;
-  }
-}
-
-interface PaymentIntegrationProps {
-  selectedPlan: {
-    name: string;
-    price: number;
-    period: string;
-  };
-  onPaymentComplete: (token: string) => void;
-}
-
-const CheckoutForm: React.FC<PaymentIntegrationProps> = ({ selectedPlan, onPaymentComplete }) => {
-  const [selectedMethod, setSelectedMethod] = useState('paypal');
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [error, setError] = useState('');
-  const [showCryptoVerification, setShowCryptoVerification] = useState(false);
-  const [selectedCrypto, setSelectedCrypto] = useState('');
-  const [verificationData, setVerificationData] = useState({
-    transactionHash: '',
-    screenshot: null as File | null,
-    amount: '',
-    fromAddress: ''
+const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
+  const { user } = useUser();
+  const { tradingPlan } = useTradingPlan();
+  const [theme, setTheme] = useState(() => {
+    // Load persisted theme from localStorage
+    const savedTheme = localStorage.getItem('dashboard_selected_concept');
+    return savedTheme || 'concept1';
   });
-  const navigate = useNavigate();
-  const [couponCode, setCouponCode] = useState('');
-  const [couponApplied, setCouponApplied] = useState(false);
-  const [discountAmount, setDiscountAmount] = useState(0);
+  const [tradingState, setTradingState] = useState<TradingState | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showConsentForm, setShowConsentForm] = useState(false);
 
-  const paymentMethods = [
-    {
-      id: 'paypal',
-      name: 'PayPal',
-      icon: <Shield className="w-6 h-6" />,
-      description: 'Pay with your PayPal account',
-      fees: 'No additional fees',
-      enabled: true
-    },
-    {
-      id: 'stripe',
-      name: 'Stripe',
-      icon: <Check className="w-6 h-6" />,
-      description: 'Pay with your credit card',
-      fees: 'No additional fees',
-      enabled: true
-    },
-    {
-      id: 'crypto',
-      name: 'Cryptocurrency',
-      icon: <Bitcoin className="w-6 h-6" />,
-      description: 'Ethereum (ETH), Solana (SOL)',
-      fees: 'Manual verification required',
-      enabled: true
-    },
-  ];
-
-  // Coupon functions
-  const applyCoupon = () => {
-    if (couponCode === 'TRADERFREE') {
-      setCouponApplied(true);
-      setDiscountAmount(selectedPlan.price);
-      setError('');
-    } else if (couponCode === 'INTERNAL_DEV_OVERRIDE_2024') {
-      setCouponApplied(true);
-      setDiscountAmount(selectedPlan.price - 0.1);
-      setError('');
-    } else {
-      setError('Invalid coupon code');
+  // Check for consent on mount
+  useEffect(() => {
+    const consentGiven = localStorage.getItem('user_consent_accepted');
+    if (!consentGiven && user?.setupComplete) {
+      setShowConsentForm(true);
     }
-  };
+  }, [user]);
 
-  const removeCoupon = () => {
-    setCouponApplied(false);
-    setDiscountAmount(0);
-    setCouponCode('');
-  };
-
-
-  // PayPal Payment Processing
-  const processPayPalPayment = async () => {
-    try {
-      // In a real implementation, you would integrate PayPal SDK
-      // Create order and capture payment
-      
-      console.log("Simulating PayPal payment...");
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate network delay
-
-      // Simulate successful payment for demo
-      return { success: true, orderId: 'paypal_' + Math.random().toString(36).substr(2, 9) };
-    } catch (error) {
-      console.error('PayPal payment error:', error);
-      return { success: false, error: 'PayPal payment failed' };
-    }
-  };
-
-  // Cryptocurrency Payment Processing
-  const processCryptoPayment = async () => {
-    try {
-      // Show crypto verification page instead of processing immediately
-      setShowCryptoVerification(true);
-      return { success: false, showVerification: true };
-    } catch (error) {
-      console.error('Crypto payment error:', error);
-      return { success: false, error: 'Crypto payment failed' };
-    }
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    setError('');
-
-    let paymentSuccessful = false;
-
-    try {
-      // Handle free checkout - bypass payment processing entirely
-      if (couponApplied && discountAmount >= selectedPlan.price) {
-        console.log('Processing free coupon checkout...');
+  // Load initial data from API and localStorage
+  useEffect(() => {
+    const initializeData = async () => {
+      if (user?.email) {
+        setIsLoading(true);
+        const stateKey = `trading_state_${user.email}`;
         
-        // Store coupon details for payment verification
-        localStorage.setItem('payment_details', JSON.stringify({
-          method: 'free_coupon',
-          amount: 0,
-          plan: selectedPlan.name,
-          coupon_code: couponCode,
-          discount_amount: discountAmount,
-          timestamp: new Date().toISOString()
-        }));
+        // Restore dashboard state from user backup if available
+        const backupData = localStorage.getItem(`user_backup_${user.email}`);
+        if (backupData) {
+          try {
+            const backup = JSON.parse(backupData);
+            if (backup.dashboardState) {
+              // Restore dashboard preferences
+              if (backup.dashboardState.activeTab) {
+                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
+              }
+              if (backup.dashboardState.selectedTimezone) {
+                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
+              }
+              if (backup.dashboardState.preferences) {
+                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
+              }
+            }
+          } catch (error) {
+            console.warn('Could not restore dashboard state:', error);
+          }
+        }
         
-        // For free transactions, directly call the completion handler
-        setIsProcessing(false);
-        onPaymentComplete('free_coupon_checkout'); 
+        // Load data from localStorage first, then try API as enhancement
+        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
+        const localState = localStorage.getItem(stateKey);
+        const questionnaireData = localStorage.getItem('questionnaireAnswers');
+        const riskPlanData = localStorage.getItem('riskManagementPlan');
+        
+        let parsedQuestionnaire = null;
+        let parsedRiskPlan = null;
+        
+        try {
+          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
+          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
+        } catch (parseError) {
+          console.warn('Error parsing questionnaire data, using defaults');
+        }
+        
+        // Create dashboard data from questionnaire if available
+        const accountValue = parsedQuestionnaire?.hasAccount === 'yes' 
+          ? parsedQuestionnaire?.accountEquity 
+          : parsedQuestionnaire?.accountSize;
+
+        const fallbackDashboardData = {
+          userProfile: {
+            propFirm: parsedQuestionnaire?.propFirm || 'Not Set',
+            accountType: parsedQuestionnaire?.accountType || 'Not Set',
+            accountSize: accountValue || 100000,
+            riskPerTrade: `${parsedQuestionnaire?.riskPercentage || 1}%`,
+            experience: parsedQuestionnaire?.experience || 'intermediate',
+            uniqueId: user?.uniqueId || 'Not Set'
+          },
+          performance: {
+            accountBalance: accountValue || parsedRiskPlan?.accountSize || 100000,
+            totalPnl: 0,
+            winRate: 0,
+            totalTrades: 0
+          },
+          riskProtocol: {
+            maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
+            riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
+            maxDrawdown: '10%'
+          }
+        };
+        
+        // Set dashboard data from localStorage or fallback
+        if (localDashboardData) {
+          try {
+            setDashboardData(JSON.parse(localDashboardData));
+          } catch {
+            setDashboardData(fallbackDashboardData);
+          }
+        } else {
+          setDashboardData(fallbackDashboardData);
+        }
+        
+        // Initialize trading state
+        if (localState) {
+          try {
+            setTradingState(JSON.parse(localState));
+          } catch {
+            // Create new state if parsing fails
+            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+              ? parsedQuestionnaire?.accountEquity 
+              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+            const initialState: TradingState = {
+              initialEquity,
+              currentEquity: initialEquity,
+              trades: [],
+              openPositions: [],
+              riskSettings: {
+                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+                dailyLossLimit: 5,
+                consecutiveLossesLimit: 3,
+              },
+              performanceMetrics: {
+                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+                consecutiveLosses: 0,
+              },
+              dailyStats: { pnl: 0, trades: 0, initialEquity },
+            };
+            setTradingState(initialState);
+            localStorage.setItem(stateKey, JSON.stringify(initialState));
+          }
+        } else {
+          // Create initial state for new users
+          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+            ? parsedQuestionnaire?.accountEquity 
+            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+          const initialState: TradingState = {
+            initialEquity,
+            currentEquity: initialEquity,
+            trades: [],
+            openPositions: [],
+            riskSettings: {
+              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+              dailyLossLimit: 5,
+              consecutiveLossesLimit: 3,
+            },
+            performanceMetrics: {
+              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+              consecutiveLosses: 0,
+            },
+            dailyStats: { pnl: 0, trades: 0, initialEquity },
+          };
+          setTradingState(initialState);
+          localStorage.setItem(stateKey, JSON.stringify(initialState));
+        }
+        
+        try {
+          const response = await api.get('/api/dashboard-data');
+          setDashboardData(response.data);
+        } catch (error) {
+          console.error('Failed to fetch dashboard data from API, using fallback.', error);
+        }
+        
+        // Generate comprehensive mock dashboard data if none exists
+        if (!localDashboardData) {
+          const mockDashboardData = {
+            user: {
+              name: user.name || 'Trader',
+              email: user.email,
+              membershipTier: user.membershipTier || 'professional',
+              joinDate: new Date().toISOString(),
+              lastLogin: new Date().toISOString(),
+            },
+            account: {
+              balance: tradingPlan?.userProfile?.initialBalance || 10000,
+              equity: tradingPlan?.userProfile?.initialBalance || 10000,
+              margin: 0,
+              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
+              marginLevel: 0
+            },
+            performance: {
+              totalPnl: 0,
+              winRate: 0,
+              totalTrades: 0,
+              profitFactor: 0,
+              maxDrawdown: 0
+            },
+            signals: [],
+            news: [],
+            lastUpdated: new Date().toISOString()
+          };
+          
+          setDashboardData(mockDashboardData);
+          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
+        }
+        
+        setIsLoading(false);
+      }
+    };
+    initializeData();
+  }, [user, tradingPlan]);
+
+  // Persist data to localStorage on change
+  useEffect(() => {
+    if (user?.email && tradingState) {
+      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
+    }
+    if (user?.email && dashboardData) {
+      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
+    }
+  }, [tradingState, dashboardData, user?.email]);
+
+  const handleConsentAccept = () => {
+    setShowConsentForm(false);
+  };
+
+  const handleConsentDecline = () => {
+    onLogout();
+  };
+
+  const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
+    if (tradingState) {
+      if (isDailyLossLimitReached(tradingState)) {
+        alert("You have hit your daily loss limit. No more trades are allowed today.");
         return;
       }
-
-      let paymentResult;
-
-      // Process payment based on selected method
-      switch (selectedMethod) {
-        case 'paypal':
-          navigate('/paypal-payment', { state: { selectedPlan } });
-          return;
-        case 'stripe':
-          navigate('/stripe-payment', { state: { selectedPlan } });
-          return;
-        case 'crypto':
-          paymentResult = await processCryptoPayment();
-          break;
-        default:
-          throw new Error('Invalid payment method');
-      }
-
-      if ((paymentResult as any).success) {
-        const paymentToken = (paymentResult as any).orderId || 'mock_payment_token';
-        // Store payment details
-        localStorage.setItem('payment_details', JSON.stringify({
-          method: selectedMethod,
-          amount: selectedPlan.price,
-          plan: selectedPlan.name,
-          paymentId: paymentToken,
-          timestamp: new Date().toISOString()
-        }));
-        onPaymentComplete(paymentToken);
-        paymentSuccessful = true;
-      } else if ((paymentResult as any).showVerification) {
-        // Don't reset processing state, as we're moving to a new UI
-        return;
-      } else {
-        setError((paymentResult as any).error || 'Payment failed. Please try again.');
-      }
-    } catch (error: any) {
-      console.error('Payment processing error:', error);
-      setError(error.message || 'An unexpected error occurred. Please try again.');
-    } finally {
-      if (!paymentSuccessful) {
-        setIsProcessing(false);
-      }
+      const stateAfterOpen = openTrade(tradingState, signal);
+      const newTrade = stateAfterOpen.openPositions[stateAfterOpen.openPositions.length - 1];
+      const finalState = closeTrade(stateAfterOpen, newTrade.id, outcome, pnl);
+      setTradingState(finalState);
     }
   };
 
-  const cryptoAddresses = {
-    ETH: {
-      address: '0x461bBf1B66978fE97B1A2bcEc52FbaB6aEDDF256',
-      name: 'Ethereum (ETH)',
-      network: 'Ethereum Mainnet',
-      symbol: 'ETH'
-    },
-    SOL: {
-      address: 'GZGsfmqx6bAYdXiVQs3QYfPFPjyfQggaMtBp5qm5R7r3',
-      name: 'Solana (SOL)',
-      network: 'Solana Mainnet',
-      symbol: 'SOL'
-    }
-  };
-
-  const handleCryptoSelection = (crypto: string) => {
-    setSelectedCrypto(crypto);
-  };
-
-  const handleVerificationSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsProcessing(true);
-    setError('');
-
-    try {
-      // Validate verification data
-      if (!verificationData.transactionHash.trim()) {
-        throw new Error('Transaction hash is required');
-      }
-      
-      if (!verificationData.amount || parseFloat(verificationData.amount) <= 0) {
-        throw new Error('Valid amount is required');
-      }
-
-      // Simulate verification process
-      await new Promise(resolve => setTimeout(resolve, 3000));
-
-      // Store verification details
-      localStorage.setItem('crypto_verification', JSON.stringify({
-        crypto: selectedCrypto,
-        address: cryptoAddresses[selectedCrypto as keyof typeof cryptoAddresses].address,
-        transactionHash: verificationData.transactionHash,
-        amount: verificationData.amount,
-        fromAddress: verificationData.fromAddress,
-        screenshot: verificationData.screenshot?.name,
-        timestamp: new Date().toISOString(),
-        status: 'pending_verification'
-      }));
-
-      onPaymentComplete(verificationData.transactionHash);
-
-    } catch (error: any) {
-      setError(error.message || 'Verification failed. Please check your details.');
-    } finally {
-      setIsProcessing(false);
-    }
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      if (file.size > 5 * 1024 * 1024) { // 5MB limit
-        setError('Screenshot file size must be less than 5MB');
-        return;
-      }
-      if (!file.type.startsWith('image/')) {
-        setError('Please upload a valid image file');
-        return;
-      }
-      setVerificationData(prev => ({ ...prev, screenshot: file }));
-      setError('');
-    }
-  };
-
-  const copyToClipboard = (text: string) => {
-    navigator.clipboard.writeText(text);
-    // You could add a toast notification here
-  };
-
-  // Crypto Verification Page
-  if (showCryptoVerification) {
+  if (isLoading || !user) {
     return (
-      <div className="max-w-4xl mx-auto p-6">
-        <div className="bg-gray-800 rounded-2xl border border-gray-700 p-8">
-          <div className="text-center mb-8">
-            <div className="text-6xl mb-4">₿</div>
-            <h2 className="text-2xl font-bold text-white mb-4">Cryptocurrency Payment</h2>
-            <p className="text-gray-400">
-              Send payment to one of our crypto addresses and verify your transaction
-            </p>
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
+        <FuturisticBackground />
+        <FuturisticCursor />
+        
+        {/* Futuristic Loading Animation */}
+        <div className="relative z-10 text-center">
+          {/* Main Loading Circle */}
+          <div className="relative mb-8">
+            <div className="w-32 h-32 mx-auto relative">
+              {/* Outer rotating ring */}
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
+              {/* Middle rotating ring */}
+              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+              {/* Inner pulsing core */}
+              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
+              {/* Center dot */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
+            </div>
           </div>
-
-          {!selectedCrypto ? (
-            <div className="space-y-6">
-              <h3 className="text-lg font-semibold text-white text-center mb-6">Select Cryptocurrency</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {Object.entries(cryptoAddresses).map(([key, crypto]) => (
-                  <button
-                    key={key}
-                    onClick={() => handleCryptoSelection(key)}
-                    className="p-6 bg-gray-700 hover:bg-gray-600 rounded-xl border border-gray-600 hover:border-blue-500 transition-all text-left"
-                  >
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center">
-                        <span className="text-white font-bold">{crypto.symbol}</span>
-                      </div>
-                      <div>
-                        <div className="text-white font-semibold">{crypto.name}</div>
-                        <div className="text-gray-400 text-sm">{crypto.network}</div>
-                      </div>
-                    </div>
-                  </button>
-                ))}
+          
+          {/* Loading Text with Typewriter Effect */}
+          <div className="text-2xl font-bold mb-4">
+            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
+              INITIALIZING DASHBOARD
+            </span>
+          </div>
+          
+          {/* Progress Bars */}
+          <div className="space-y-3 max-w-md mx-auto">
+            <div className="flex items-center space-x-3">
+              <div className="text-cyan-400 text-sm font-mono w-24 text-left">CORE_SYS</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse" style={{width: '85%'}}></div>
               </div>
+              <div className="text-cyan-400 text-xs font-mono w-8">85%</div>
             </div>
-          ) : (
-            <div className="space-y-8">
-              {/* Payment Instructions */}
-              <div className="bg-blue-600/20 border border-blue-600 rounded-xl p-6">
-                <h3 className="text-lg font-semibold text-blue-400 mb-4">Payment Instructions</h3>
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Send {cryptoAddresses[selectedCrypto as keyof typeof cryptoAddresses].symbol} to this address:
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={cryptoAddresses[selectedCrypto as keyof typeof cryptoAddresses].address}
-                        readOnly
-                        className="flex-1 px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white font-mono text-sm"
-                      />
-                      <button
-                        onClick={() => copyToClipboard(cryptoAddresses[selectedCrypto as keyof typeof cryptoAddresses].address)}
-                        className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl transition-colors"
-                      >
-                        Copy
-                      </button>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div>
-                      <span className="text-gray-400">Amount:</span>
-                      <span className="text-white font-semibold ml-2">${selectedPlan.price} USD equivalent</span>
-                    </div>
-                    <div>
-                      <span className="text-gray-400">Network:</span>
-                      <span className="text-white font-semibold ml-2">
-                        {cryptoAddresses[selectedCrypto as keyof typeof cryptoAddresses].network}
-                      </span>
-                    </div>
-                  </div>
-                </div>
+            <div className="flex items-center space-x-3">
+              <div className="text-blue-400 text-sm font-mono w-24 text-left">DATA_SYNC</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full animate-pulse" style={{width: '72%'}}></div>
               </div>
-
-              {/* Verification Form */}
-              <form onSubmit={handleVerificationSubmit} className="space-y-6">
-                <h3 className="text-lg font-semibold text-white">Verify Your Payment</h3>
-                
-                
-                {error && (
-                  <div className="p-4 bg-red-600/20 border border-red-600 rounded-lg flex items-center space-x-2">
-                    <AlertCircle className="w-5 h-5 text-red-400" />
-                    <span className="text-red-400 text-sm">{error}</span>
-                  </div>
-                )}
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Transaction Hash *
-                    </label>
-                    <input
-                      type="text"
-                      value={verificationData.transactionHash}
-                      onChange={(e) => setVerificationData(prev => ({ ...prev, transactionHash: e.target.value }))}
-                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
-                      placeholder="Enter transaction hash"
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-300 mb-2">
-                      Amount Sent (USD) *
-                    </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={verificationData.amount}
-                      onChange={(e) => setVerificationData(prev => ({ ...prev, amount: e.target.value }))}
-                      className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
-                      placeholder={selectedPlan.price.toString()}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Your Wallet Address (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={verificationData.fromAddress}
-                    onChange={(e) => setVerificationData(prev => ({ ...prev, fromAddress: e.target.value }))}
-                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-blue-500"
-                    placeholder="Your sending wallet address"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">
-                    Transaction Screenshot (Optional)
-                  </label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileUpload}
-                    className="w-full px-4 py-3 bg-gray-700 border border-gray-600 rounded-xl text-white focus:ring-2 focus:ring-blue-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-blue-600 file:text-white file:cursor-pointer"
-                  />
-                  {verificationData.screenshot && (
-                    <p className="text-sm text-green-400 mt-2">
-                      ✓ {verificationData.screenshot.name} uploaded
-                    </p>
-                  )}
-                  <p className="text-xs text-gray-400 mt-1">Max file size: 5MB</p>
-                </div>
-
-                <div className="bg-yellow-600/20 border border-yellow-600 rounded-xl p-4">
-                  <div className="flex items-center space-x-2 text-yellow-400 mb-2">
-                    <AlertTriangle className="w-4 h-4" />
-                    <span className="font-medium">Important Notes</span>
-                  </div>
-                  <ul className="text-sm text-gray-300 space-y-1">
-                    <li>• Send the exact USD equivalent amount in {cryptoAddresses[selectedCrypto as keyof typeof cryptoAddresses].symbol}</li>
-                    <li>• Use the correct network ({cryptoAddresses[selectedCrypto as keyof typeof cryptoAddresses].network})</li>
-                    <li>• Verification may take 1-24 hours</li>
-                    <li>• You'll receive email confirmation once verified</li>
-                  </ul>
-                </div>
-
-                <div className="flex space-x-4">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setSelectedCrypto('');
-                      setVerificationData({ transactionHash: '', screenshot: null, amount: '', fromAddress: '' });
-                    }}
-                    className="flex-1 bg-gray-600 hover:bg-gray-700 text-white py-3 rounded-xl font-semibold transition-colors"
-                  >
-                    Back to Selection
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={isProcessing}
-                    className="flex-1 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-800 disabled:cursor-not-allowed text-white py-3 rounded-xl font-semibold transition-colors flex items-center justify-center space-x-2"
-                  >
-                    {isProcessing ? (
-                      <>
-                        <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Verifying...</span>
-                      </>
-                    ) : (
-                      <span>Submit for Verification</span>
-                    )}
-                  </button>
-                </div>
-              </form>
+              <div className="text-blue-400 text-xs font-mono w-8">72%</div>
             </div>
-          )}
+            <div className="flex items-center space-x-3">
+              <div className="text-purple-400 text-sm font-mono w-24 text-left">UI_LOAD</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
+              </div>
+              <div className="text-purple-400 text-xs font-mono w-8">91%</div>
+            </div>
+          </div>
+          
+          {/* Status Messages */}
+          <div className="mt-6 text-gray-400 text-sm font-mono">
+            <div className="animate-pulse">» Establishing secure connection...</div>
+            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
+            <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
+          </div>
+          
+          {/* Scanning Effect */}
+          <div className="absolute -inset-4 opacity-30">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
+            <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
+            <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-gradient-to-b from-transparent via-pink-400 to-transparent animate-pulse" style={{animationDelay: '1.5s'}}></div>
+          </div>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="max-w-4xl mx-auto p-6">
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Order Summary */}
-        <div className="lg:col-span-1">
-          <Card3D className="p-6 sticky top-6" glowColor="blue">
-            <div className="flex justify-between items-center mb-4">
-              <HolographicText className="text-lg font-semibold text-white">Order Summary</HolographicText>
-              <button
-                onClick={() => navigate('/membership')}
-                className="text-sm text-blue-400 hover:text-blue-300 nav-item-3d"
-              >
-                Change
-              </button>
-            </div>
-            
-            <div className="space-y-4">
-              <div className="flex justify-between">
-                <span className="text-gray-400">{selectedPlan.name}</span>
-                <span className="text-white font-medium counter-3d">${selectedPlan.price}/{selectedPlan.period}</span>
-              </div>
-              
-              {/* Coupon Section */}
-              <div className="border-t border-gray-600 pt-4">
-                <div className="space-y-3">
-                  <div className="flex space-x-2">
-                    <input
-                      type="text"
-                      value={couponCode}
-                      onChange={(e) => setCouponCode(e.target.value.toUpperCase())}
-                      placeholder="Enter coupon code"
-                      className="input-3d flex-1 px-3 py-2 text-white text-sm"
-                      disabled={couponApplied}
-                    />
-                    {!couponApplied ? (
-                      <Button3D
-                        type="button"
-                        onClick={applyCoupon}
-                        size="sm"
-                      >
-                        Apply
-                      </Button3D>
-                    ) : (
-                      <Button3D
-                        type="button"
-                        onClick={removeCoupon}
-                        variant="secondary"
-                        size="sm"
-                      >
-                        Remove
-                      </Button3D>
-                    )}
-                  </div>
-                  
-                  {couponApplied && (
-                    <div className="bg-green-600/20 border border-green-600 rounded-lg p-3 neon-border">
-                      <div className="flex items-center space-x-2 text-green-400">
-                        <CheckCircle className="w-4 h-4" />
-                        <span className="font-medium">Coupon Applied</span>
-                      </div>
-                      <div className="text-green-300 text-sm mt-1">
-                        You saved <span className="counter-3d">${discountAmount.toFixed(2)}</span>!
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-              
-              {error && (
-                <div className="p-4 bg-red-600/20 border border-red-600 rounded-lg flex items-center space-x-2 neon-border">
-                  <AlertCircle className="w-5 h-5 text-red-400" />
-                  <span className="text-red-400 text-sm">{error}</span>
-                </div>
-              )}
-
-              <div className="border-t border-gray-600 pt-4">
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Subtotal</span>
-                    <span className="text-white counter-3d">${selectedPlan.price.toFixed(2)}</span>
-                  </div>
-                  {couponApplied && (
-                    <div className="flex justify-between">
-                      <span className="text-green-400">Discount</span>
-                      <span className="text-green-400 counter-3d">-${discountAmount.toFixed(2)}</span>
-                    </div>
-                  )}
-                  <div className="flex justify-between border-t border-gray-600 pt-2 mt-2">
-                    <span className="text-white font-semibold">Total</span>
-                    <span className="text-white font-bold">
-                      <span className="counter-3d">${Math.max(0, selectedPlan.price - discountAmount).toFixed(2)}</span>
-                      {couponApplied && discountAmount >= selectedPlan.price && (
-                        <span className="text-green-400 ml-2 text-sm">(FREE!)</span>
-                      )}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="mt-6 p-4 bg-blue-600/20 border border-blue-600 rounded-xl neon-border">
-              <div className="flex items-center space-x-2 text-blue-400 mb-2">
-                <Check className="w-4 h-4" />
-                <span className="font-medium">What's Included</span>
-              </div>
-              <ul className="text-sm text-gray-300 space-y-1">
-                <li>• Full access to all features</li>
-                <li>• Unlimited trading signals</li>
-                <li>• Custom trading plans</li>
-              </ul>
-            </div>
-          </Card3D>
-        </div>
-
-        {/* Payment Form */}
-        <div className="lg:col-span-2">
-          <Card3D className="p-6" glowColor="cyan">
-            <HolographicText className="text-xl font-semibold text-white mb-6">Payment Method</HolographicText>
-
-            {/* Error Message */}
-            {error && (
-              <div className="mb-6 p-4 bg-red-600/20 border border-red-600 rounded-lg flex items-center space-x-2 neon-border">
-                <AlertCircle className="w-5 h-5 text-red-400" />
-                <span className="text-red-400 text-sm">{error}</span>
-              </div>
-            )}
-
-            {/* Payment Method Selection */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
-              {paymentMethods.map((method) => (
-                <button
-                  key={method.id}
-                  onClick={() => setSelectedMethod(method.id)}
-                  disabled={!method.enabled}
-                  className={`p-4 rounded-xl border-2 transition-all text-left cursor-pointer interactive-element ${
-                    selectedMethod === method.id
-                      ? 'border-blue-500 bg-blue-500/20 neon-border'
-                      : method.enabled 
-                        ? 'border-gray-600 bg-gray-700/50 hover:border-gray-500'
-                        : 'border-gray-700 bg-gray-800 opacity-50 cursor-not-allowed'
-                  }`}
-                  style={{ cursor: method.enabled ? 'pointer' : 'not-allowed' }}
-                >
-                  <div className="flex items-center space-x-3 mb-2">
-                    <div className={selectedMethod === method.id ? 'text-blue-400' : 'text-gray-400'}>
-                      {method.icon}
-                    </div>
-                    <span className="text-white font-medium">{method.name}</span>
-                  </div>
-                  <p className="text-sm text-gray-400">{method.description}</p>
-                  <p className="text-xs text-gray-500 mt-1">{method.fees}</p>
-                </button>
-              ))}
-            </div>
-
-            {/* Payment Form */}
-            <form onSubmit={handleSubmit} className="space-y-6">
-              {selectedMethod === 'paypal' && (
-                <div className="text-center py-8">
-                  <div className="text-6xl mb-4">💳</div>
-                  <p className="text-gray-400">You'll be redirected to PayPal to complete your payment</p>
-                </div>
-              )}
-
-              {selectedMethod === 'crypto' && (
-                <div className="text-center py-8">
-                  <div className="text-6xl mb-4">₿</div>
-                  <p className="text-gray-400 mb-4">Pay with Ethereum (ETH) or Solana (SOL)</p>
-                  <p className="text-sm text-gray-500">Manual verification required after payment</p>
-                </div>
-              )}
-
-              {/* Security Notice */}
-              <div className="bg-gray-700/50 rounded-xl p-4 border border-gray-600 neon-border">
-                <div className="flex items-center space-x-2 text-blue-400 mb-2">
-                  <Lock className="w-4 h-4" />
-                  <span className="font-medium">Secure Payment</span>
-                </div>
-                <p className="text-sm text-gray-400">
-                  Your payment information is encrypted and secure. We use industry-standard SSL encryption 
-                  and never store your payment details.
-                </p>
-              </div>
-
-              {/* Submit Button */}
-              <Button3D
-                type="submit"
-                disabled={isProcessing}
-                variant="primary"
-                className="w-full py-4"
-              >
-                {isProcessing ? (
-                  <>
-                    <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    <span>Processing Payment...</span>
-                  </>
-                ) : (
-                  <span>
-                    {selectedMethod === 'crypto' ? 'Pay with Crypto' :
-                     'Complete Purchase'}
-                  </span>
-                )}
-              </Button3D>
-
-              <p className="text-center text-sm text-gray-400">
-                By continuing, you agree to our Terms of Service and Privacy Policy
-              </p>
-            </form>
-          </Card3D>
+  if (!user.setupComplete) {
+    const message = user.membershipTier === 'kickstarter'
+      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
+      : "Please complete the setup process to access your dashboard.";
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
+        <FuturisticBackground />
+        <FuturisticCursor />
+        <div className="relative z-10 text-center">
+          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
+          <p className="text-gray-400">{message}</p>
         </div>
       </div>
-    </FuturisticScene>
+    );
+  }
+
+  const renderTheme = () => {
+    const props = {
+      onLogout,
+      tradingState,
+      dashboardData,
+      handleMarkAsTaken,
+      setTradingState,
+      user,
+    };
+    switch (theme) {
+      case 'concept1':
+        return <DashboardConcept1 {...props} />;
+      case 'concept2':
+        return <DashboardConcept2 {...props} />;
+      case 'concept3':
+        return <DashboardConcept3 {...props} />;
+      case 'concept4':
+        return <DashboardConcept4 {...props} />;
+      default:
+        return <DashboardConcept1 {...props} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950 font-inter relative">
+      <FuturisticBackground />
+      <FuturisticCursor />
+      <ConsentForm 
+        isOpen={showConsentForm}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+      <div className="theme-switcher fixed top-4 right-4 z-50">
+        <select 
+          onChange={(e) => {
+            const newTheme = e.target.value;
+            setTheme(newTheme);
+            // Persist theme selection to localStorage
+            localStorage.setItem('dashboard_selected_concept', newTheme);
+            logActivity('theme_change', { theme: newTheme });
+          }}
+          value={theme}
+          className="bg-gray-800 text-white p-2 rounded border border-gray-600"
+        >
+          <option value="concept1">Concept 1</option>
+          <option value="concept2">Concept 2</option>
+          <option value="concept3">Concept 3</option>
+          <option value="concept4">Concept 4</option>
+        </select>
+      </div>
+      {renderTheme()}
+    </div>
   );
 };
 
-const PaymentIntegration: React.FC<PaymentIntegrationProps> = (props) => (
-    <CheckoutForm {...props} />
-);
-
-export default PaymentIntegration;
+export default Dashboard;
