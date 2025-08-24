@@ -1,696 +1,379 @@
-import React, { useState, useEffect } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useState, useEffect } from 'react';
+import { TradingState, TradeOutcome, Signal } from '../trading/types';
+import { openTrade, closeTrade } from '../trading/tradeManager';
+import { isDailyLossLimitReached } from '../trading/riskManager';
 import { useUser } from '../contexts/UserContext';
-import { Shield, Target, TrendingUp, AlertTriangle, Zap, Brain, Activity, DollarSign, BarChart3, Clock, CheckCircle } from 'lucide-react';
+import { useTradingPlan } from '../contexts/TradingPlanContext';
 import api from '../api';
+import ConsentForm from './ConsentForm';
+import FuturisticScene from './3D/FuturisticScene';
+import '../styles/3d-animations.css';
+import DashboardConcept1 from './DashboardConcept1';
+import DashboardConcept2 from './DashboardConcept2';
+import DashboardConcept3 from './DashboardConcept3';
+import DashboardConcept4 from './DashboardConcept4';
 import { logActivity } from '../api/activity';
 
-const RiskManagementPlan: React.FC = () => {
-  const location = useLocation();
-  const navigate = useNavigate();
+const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
   const { user } = useUser();
-  const { answers, plan, fromQuestionnaire, questionnaireData } = location.state || {};
-  
-  // Use questionnaireData as primary source, fallback to answers
-  const questionnaire = questionnaireData || answers;
-  
-  const [currentPlan, setPlan] = useState(plan);
-  const [isGenerating, setIsGenerating] = useState(false);
+  const { tradingPlan } = useTradingPlan();
+  const [theme, setTheme] = useState(() => {
+    // Load persisted theme from localStorage
+    const savedTheme = localStorage.getItem('dashboard_selected_concept');
+    return savedTheme || 'concept1';
+  });
+  const [tradingState, setTradingState] = useState<TradingState | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showConsentForm, setShowConsentForm] = useState(false);
 
-  // State for stop loss and pip value with default values
-  // TODO: These should ideally come from user input or a more sophisticated calculation
-  const [stopLossPips, setStopLossPips] = useState(20); // Default stop loss in pips
-  const [pipValue, setPipValue] = useState(10); // Default pip value for a standard lot (e.g., for EUR/USD)
-
-
-  // Generate comprehensive plan based on all questionnaire data
-  const generatePlan = (data: any) => {
-    const accountSize = Number(data.accountSize) || 10000;
-    const riskPercentage = data.riskPercentage || 1;
-    const riskRewardRatio = Number(data.riskRewardRatio) || 2;
-    const tradesPerDay = data.tradesPerDay || '1-2';
-    const tradingSession = data.tradingSession || 'any';
-    const propFirm = data.propFirm || '';
-    const accountType = data.accountType || '';
-    const hasAccount = data.hasAccount || 'no';
-    const accountEquity = Number(data.accountEquity) || 0;
-    const cryptoAssets = data.cryptoAssets || [];
-    const forexAssets = data.forexAssets || [];
-    
-    // Calculate risk amounts
-    const riskAmount = (accountSize * riskPercentage) / 100;
-    const profitAmount = riskAmount * riskRewardRatio;
-    
-    // Determine profit target based on prop firm and account type
-    let profitTargetPercentage = 0.08; // Default 8%
-    if (propFirm.toLowerCase().includes('ftmo') || propFirm.toLowerCase().includes('myforexfunds')) {
-      profitTargetPercentage = 0.10; // 10% for these firms
-    } else if (propFirm.toLowerCase().includes('funded next')) {
-      profitTargetPercentage = 0.06; // 6% for Funded Next
-    }
-    
-    const profitTarget = accountSize * profitTargetPercentage;
-    
-    // Calculate trades needed based on trades per day preference
-    const maxTradesPerDay = tradesPerDay === '1-2' ? 2 : 
-                           tradesPerDay === '3-5' ? 5 : 
-                           tradesPerDay === '6-10' ? 10 : 15;
-    
-    const idealTradesToPass = Math.ceil(profitTarget / profitAmount);
-    const tradesToPass = Math.min(idealTradesToPass, maxTradesPerDay * 10); // Cap based on daily trades
-    
-    // Calculate daily targets
-    const dailyProfitTarget = profitTarget / Math.ceil(tradesToPass / maxTradesPerDay);
-    const dailyRiskAmount = riskAmount * maxTradesPerDay;
-    
-    // Session-specific recommendations
-    const sessionRecommendations = {
-      asian: 'Focus on JPY pairs and crypto during Asian session (9 PM - 6 AM EST)',
-      european: 'Trade EUR/GBP pairs and commodities during London session (3 AM - 12 PM EST)',
-      us: 'Trade USD pairs and indices during New York session (8 AM - 5 PM EST)',
-      any: 'Flexible trading across all sessions based on market volatility'
-    };
-    
-    const tradeByTradePlan = [];
-    let currentBalance = accountSize;
-    for (let i = 0; i < tradesToPass; i++) {
-      const tradeRiskAmount = (currentBalance * riskPercentage) / 100;
-      const tradeProfitAmount = tradeRiskAmount * riskRewardRatio;
-      tradeByTradePlan.push({
-        trade: i + 1,
-        balance: currentBalance,
-        riskAmount: tradeRiskAmount,
-        profitTarget: tradeProfitAmount,
-      });
-      currentBalance += tradeProfitAmount;
-    }
-
-    return {
-      tradesToPass,
-      riskAmount,
-      profitAmount,
-      accountSize,
-      riskPercentage,
-      riskRewardRatio,
-      profitTarget,
-      profitTargetPercentage: profitTargetPercentage * 100,
-      tradesPerDay,
-      maxTradesPerDay,
-      tradingSession,
-      sessionRecommendation: sessionRecommendations[tradingSession as keyof typeof sessionRecommendations] || sessionRecommendations.any,
-      propFirm,
-      accountType,
-      hasAccount,
-      accountEquity,
-      cryptoAssets,
-      forexAssets,
-      dailyProfitTarget,
-      dailyRiskAmount,
-      estimatedDaysToPass: Math.ceil(tradesToPass / maxTradesPerDay),
-      tradeByTradePlan,
-    };
-  };
-
-  // Handle case where we come from questionnaire with data
+  // Check for consent on mount
   useEffect(() => {
-    // Try to get questionnaire data from multiple sources
-    let questionnaireSource = questionnaire;
-    
-    // Fallback to localStorage if no data in location state
-    if (!questionnaireSource) {
-      const storedAnswers = localStorage.getItem('questionnaireAnswers');
-      if (storedAnswers) {
-        try {
-          questionnaireSource = JSON.parse(storedAnswers);
-        } catch (error) {
-          console.error('Error parsing stored questionnaire answers:', error);
+    const consentGiven = localStorage.getItem('user_consent_accepted');
+    if (!consentGiven && user?.setupComplete) {
+      setShowConsentForm(true);
+    }
+  }, [user]);
+
+  // Load initial data from API and localStorage
+  useEffect(() => {
+    const initializeData = async () => {
+      if (user?.email) {
+        setIsLoading(true);
+        const stateKey = `trading_state_${user.email}`;
+        
+        // Restore dashboard state from user backup if available
+        const backupData = localStorage.getItem(`user_backup_${user.email}`);
+        if (backupData) {
+          try {
+            const backup = JSON.parse(backupData);
+            if (backup.dashboardState) {
+              // Restore dashboard preferences
+              if (backup.dashboardState.activeTab) {
+                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
+              }
+              if (backup.dashboardState.selectedTimezone) {
+                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
+              }
+              if (backup.dashboardState.preferences) {
+                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
+              }
+            }
+          } catch (error) {
+            console.warn('Could not restore dashboard state:', error);
+          }
         }
+        
+        // Load data from localStorage first, then try API as enhancement
+        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
+        const localState = localStorage.getItem(stateKey);
+        const questionnaireData = localStorage.getItem('questionnaireAnswers');
+        const riskPlanData = localStorage.getItem('riskManagementPlan');
+        
+        let parsedQuestionnaire = null;
+        let parsedRiskPlan = null;
+        
+        try {
+          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
+          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
+        } catch (parseError) {
+          console.warn('Error parsing questionnaire data, using defaults');
+        }
+        
+        // Create dashboard data from questionnaire if available
+        const accountValue = parsedQuestionnaire?.hasAccount === 'yes' 
+          ? parsedQuestionnaire?.accountEquity 
+          : parsedQuestionnaire?.accountSize;
+
+    <FuturisticScene className="min-h-screen text-white flex items-center justify-center p-4 relative">
+      <AnimatedBackground />
+      <div className="relative w-full max-w-3xl z-10">
+        <Card3D className="p-8 form-3d" glowColor="cyan">
+          <div className="relative z-10">
+            <HolographicText className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</HolographicText>
+            <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
+            experience: parsedQuestionnaire?.experience || 'intermediate',
+          riskProtocol: {
+            maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
+            riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
+            maxDrawdown: '10%'
+          }
+        };
+        
+        // Set dashboard data from localStorage or fallback
+        if (localDashboardData) {
+          try {
+            setDashboardData(JSON.parse(localDashboardData));
+          } catch {
+            setDashboardData(fallbackDashboardData);
+          }
+        } else {
+          setDashboardData(fallbackDashboardData);
+        }
+        
+        // Initialize trading state
+        if (localState) {
+          try {
+            setTradingState(JSON.parse(localState));
+          } catch {
+            // Create new state if parsing fails
+            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+              ? parsedQuestionnaire?.accountEquity 
+              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+            const initialState: TradingState = {
+              initialEquity,
+              currentEquity: initialEquity,
+              trades: [],
+              openPositions: [],
+              riskSettings: {
+                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+                dailyLossLimit: 5,
+                consecutiveLossesLimit: 3,
+              },
+              performanceMetrics: {
+                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+                consecutiveLosses: 0,
+              },
+              dailyStats: { pnl: 0, trades: 0, initialEquity },
+            };
+            setTradingState(initialState);
+            localStorage.setItem(stateKey, JSON.stringify(initialState));
+          }
+        } else {
+          // Create initial state for new users
+          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+            ? parsedQuestionnaire?.accountEquity 
+            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+          const initialState: TradingState = {
+            initialEquity,
+            currentEquity: initialEquity,
+            trades: [],
+            openPositions: [],
+            riskSettings: {
+              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+              dailyLossLimit: 5,
+              consecutiveLossesLimit: 3,
+            },
+            performanceMetrics: {
+              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+              consecutiveLosses: 0,
+            },
+            dailyStats: { pnl: 0, trades: 0, initialEquity },
+          };
+          setTradingState(initialState);
+          localStorage.setItem(stateKey, JSON.stringify(initialState));
+        }
+        
+        try {
+          const response = await api.get('/api/dashboard-data');
+          setDashboardData(response.data);
+        } catch (error) {
+          console.error('Failed to fetch dashboard data from API, using fallback.', error);
+        }
+        
+        // Generate comprehensive mock dashboard data if none exists
+        if (!localDashboardData) {
+          const mockDashboardData = {
+            user: {
+              name: user.name || 'Trader',
+              email: user.email,
+              membershipTier: user.membershipTier || 'professional',
+              joinDate: new Date().toISOString(),
+              lastLogin: new Date().toISOString(),
+            },
+            account: {
+              balance: tradingPlan?.userProfile?.initialBalance || 10000,
+              equity: tradingPlan?.userProfile?.initialBalance || 10000,
+              margin: 0,
+              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
+              marginLevel: 0
+            },
+            performance: {
+              totalPnl: 0,
+              winRate: 0,
+              totalTrades: 0,
+              profitFactor: 0,
+              maxDrawdown: 0
+            },
+            signals: [],
+            news: [],
+            lastUpdated: new Date().toISOString()
+          };
+          
+          setDashboardData(mockDashboardData);
+          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
+        }
+        
+        setIsLoading(false);
       }
+    };
+    initializeData();
+  }, [user, tradingPlan]);
+
+  // Persist data to localStorage on change
+  useEffect(() => {
+    if (user?.email && tradingState) {
+      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
     }
-    
-    if ((fromQuestionnaire || !currentPlan) && questionnaireSource) {
-      setIsGenerating(true);
-      
-      // Generate plan based on questionnaire data
-      const generatedPlan = generatePlan(questionnaireSource);
-      
-      // Store the generated plan in state and localStorage
-      setPlan(generatedPlan);
-      localStorage.setItem('riskManagementPlan', JSON.stringify(generatedPlan));
-      setIsGenerating(false);
-      
-      // Save plan to backend (optional)
-      savePlanToBackend(generatedPlan);
+    if (user?.email && dashboardData) {
+      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
     }
-  }, [fromQuestionnaire, questionnaire]);
-  
-  const savePlanToBackend = async (planData: any) => {
-    try {
-      await api.post('/api/user/plan', {
-        plan: planData,
-        questionnaire: questionnaire
-      });
-      logActivity('risk_management_plan_saved', { plan: planData });
-      console.log('Plan saved to backend successfully');
-    } catch (error) {
-      console.warn('Backend not available, plan saved locally:', error);
-      // Continue anyway - don't block user flow for API failures
+  }, [tradingState, dashboardData, user?.email]);
+
+  const handleConsentAccept = () => {
+    setShowConsentForm(false);
+  };
+
+  const handleConsentDecline = () => {
+    onLogout();
+  };
+
+  const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
+    if (tradingState) {
+      if (isDailyLossLimitReached(tradingState)) {
+        alert("You have hit your daily loss limit. No more trades are allowed today.");
+        return;
+      }
+      const stateAfterOpen = openTrade(tradingState, signal);
+      const newTrade = stateAfterOpen.openPositions[stateAfterOpen.openPositions.length - 1];
+      const finalState = closeTrade(stateAfterOpen, newTrade.id, outcome, pnl);
+      setTradingState(finalState);
     }
   };
 
-  // Show loading state while generating plan
-  if (isGenerating) {
+  if (isLoading || !user) {
     return (
-      <div className="min-h-screen bg-gray-900 text-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-400 mx-auto mb-4"></div>
-          <p className="text-lg">Generating your risk management plan...</p>
-        </div>
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
+            <div className="space-y-6">
+              <div>
+                <div className="p-2 rounded-lg bg-red-500/20 border border-red-500/30 float-animation">
+                  <AlertTriangle className="w-5 h-5 text-red-400 float-animation" />
+              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+                <HolographicText className="text-lg font-semibold text-red-400">Risk Parameters</HolographicText>
+              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
+              {/* Center dot */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
+            </div>
+          </div>
+          
+          {/* Loading Text with Typewriter Effect */}
+        <ScrollReveal delay={0.8}>
+          <div className="text-center mt-12">
+            </span>
+              <Button3D
+                  <span className="text-red-400 font-bold counter-3d">${(planData.riskAmount || 0).toFixed(2)}</span>
+                variant="accent"
+                size="lg"
+          <div className="space-y-3 max-w-md mx-auto">
+                <Shield className="w-5 h-5 mr-2" />
+                Proceed to Upload Screenshot
+                <Shield className="w-5 h-5 ml-2" />
+              </Button3D>
+            <div className="flex items-center space-x-3">
+              <Button3D
+              </div>
+                <div className="p-2 rounded-lg bg-blue-500/20 border border-blue-500/30 float-animation">
+                  <Clock className="w-5 h-5 text-blue-400 float-animation" />
+            <div className="flex items-center space-x-3">
+                <HolographicText className="text-lg font-semibold text-blue-400">Trading Schedule</HolographicText>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
+              </div>
+              <div className="text-purple-400 text-xs font-mono w-8">91%</div>
+            </div>
+          </div>
+          
+          {/* Status Messages */}
+          <div className="mt-6 text-gray-400 text-sm font-mono">
+            <div className="animate-pulse">» Establishing secure connection...</div>
+            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
+            <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
+                  <span className="text-red-400 font-bold counter-3d">${(planData.dailyRiskAmount || 0).toFixed(2)}</span>
+          
+          {/* Scanning Effect */}
+          <div className="absolute -inset-4 opacity-30">
+                  <span className="text-green-400 font-bold counter-3d">${(planData.dailyProfitTarget || 0).toFixed(2)}</span>
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
+            <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
+            </Card3D>
+          </div>
+        </ScrollReveal>
       </div>
     );
   }
 
-  // Try to get data from localStorage if no state data
-  let finalQuestionnaire = questionnaire;
-  if (!finalQuestionnaire) {
-    const storedAnswers = localStorage.getItem('questionnaireAnswers');
-    if (storedAnswers) {
-      try {
-        finalQuestionnaire = JSON.parse(storedAnswers);
-      } catch (error) {
-        console.error('Error parsing stored questionnaire answers:', error);
-      }
-    }
-  }
-
-  // Try to get stored plan if no current plan
-  let finalPlan = currentPlan;
-  if (!finalPlan) {
-    const storedPlan = localStorage.getItem('riskManagementPlan');
-    if (storedPlan) {
-      try {
-        finalPlan = JSON.parse(storedPlan);
-      } catch (error) {
-        console.error('Error parsing stored plan:', error);
-      }
-    }
-  }
-
-  // Redirect to questionnaire if no data available
-  if (!finalQuestionnaire && !finalPlan) {
-    return (
-      <div className="min-h-screen bg-gray-900 text-white p-8">
-        <h1 className="text-3xl font-bold mb-4">Error</h1>
-        <p>No data available to generate a plan.</p>
-        <button
-          onClick={() => navigate('/questionnaire')}
-          className="mt-4 bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded"
-        >
-          Go to Questionnaire
-        </button>
+  if (!user.setupComplete) {
+                variant="accent"
+                size="lg"
+      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
+                <Brain className="w-5 h-5 mr-2" />
+                {fromQuestionnaire ? 'Save Plan & Go to Dashboard' : 'Proceed to Dashboard'}
+                <Target className="w-5 h-5 ml-2" />
+              </Button3D>
+          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
+          <p className="text-gray-400">{message}</p>
+        </ScrollReveal>
       </div>
     );
   }
 
-  // Use current plan or generate from questionnaire data
-  const planData = finalPlan || generatePlan(finalQuestionnaire || {});
-  const { tradesToPass = 0, riskAmount = 0, profitAmount = 0 } = planData || {};
-
-  // Calculate position size
-  const positionSizeInLots = (riskAmount > 0 && stopLossPips > 0 && pipValue > 0)
-    ? riskAmount / (stopLossPips * pipValue)
-    : 0;
-  const positionSizeInUnits = positionSizeInLots * 100000; // Assuming 1 lot = 100,000 units
+  const renderTheme = () => {
+    const props = {
+      onLogout,
+      tradingState,
+      dashboardData,
+      handleMarkAsTaken,
+      setTradingState,
+      user,
+    };
+    switch (theme) {
+      case 'concept1':
+        return <DashboardConcept1 {...props} />;
+      case 'concept2':
+        return <DashboardConcept2 {...props} />;
+      case 'concept3':
+        return <DashboardConcept3 {...props} />;
+      case 'concept4':
+        return <DashboardConcept4 {...props} />;
+      default:
+        return <DashboardConcept1 {...props} />;
+    }
+  };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white relative overflow-hidden">
-      {/* Futuristic Background Grid */}
-      <div className="absolute inset-0 bg-grid-pattern opacity-20"></div>
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-900/10 via-transparent to-cyan-900/10"></div>
-      
-      {/* Animated Particles */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none">
-        {[...Array(20)].map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-1 h-1 bg-cyan-400 rounded-full animate-pulse"
-            style={{
-              left: `${Math.random() * 100}%`,
-              top: `${Math.random() * 100}%`,
-              animationDelay: `${Math.random() * 3}s`,
-              animationDuration: `${2 + Math.random() * 2}s`
-            }}
-          />
-        ))}
+    <div className="min-h-screen bg-gray-950 font-inter relative">
+      <FuturisticBackground />
+      <FuturisticCursor />
+      <ConsentForm 
+        isOpen={showConsentForm}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+      <div className="theme-switcher fixed top-4 right-4 z-50">
+        <select 
+          onChange={(e) => {
+            const newTheme = e.target.value;
+            setTheme(newTheme);
+            // Persist theme selection to localStorage
+            localStorage.setItem('dashboard_selected_concept', newTheme);
+            logActivity('theme_change', { theme: newTheme });
+          }}
+          value={theme}
+          className="bg-gray-800 text-white p-2 rounded border border-gray-600"
+        >
+          <option value="concept1">Concept 1</option>
+          <option value="concept2">Concept 2</option>
+          <option value="concept3">Concept 3</option>
+          <option value="concept4">Concept 4</option>
+        </select>
       </div>
-
-      <div className="relative z-10 p-8">
-        {/* Futuristic Header */}
-        <div className="text-center mb-12 animate-fade-in-down">
-          <div className="inline-flex items-center gap-3 mb-4">
-            <div className="p-3 rounded-xl bg-gradient-to-r from-blue-600/20 to-cyan-600/20 border border-blue-500/30">
-              <Shield className="w-8 h-8 text-cyan-400" />
-            </div>
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-blue-400 via-cyan-400 to-blue-400 bg-clip-text text-transparent">
-              Neural Risk Management Protocol
-            </h1>
-            <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-600/20 to-blue-600/20 border border-cyan-500/30">
-              <Brain className="w-8 h-8 text-blue-400" />
-            </div>
-          </div>
-          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
-            AI-Powered Trading Risk Analysis & Optimization System
-          </p>
-        </div>
-
-        <div className="max-w-7xl mx-auto space-y-8 animate-fade-in-up">
-        
-        {/* Account Overview - Futuristic Cards */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Prop Firm Details */}
-          <div className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-300"></div>
-            <div className="relative bg-gray-900/80 backdrop-blur-sm border border-green-500/30 rounded-2xl p-6 hover:border-green-400/50 transition-all duration-300">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded-lg bg-green-500/20 border border-green-500/30">
-                  <DollarSign className="w-5 h-5 text-green-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-green-400">Prop Firm Details</h3>
-              </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Firm:</span>
-                  <span className="text-white font-medium">{planData.propFirm || 'Not Set'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Account Type:</span>
-                  <span className="text-white font-medium">{planData.accountType || 'Not Set'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Account Size:</span>
-                  <span className="text-green-400 font-bold">${(planData.accountSize || 0).toLocaleString()}</span>
-                </div>
-                {planData.hasAccount === 'yes' && (
-                  <div className="flex justify-between">
-                    <span className="text-gray-400">Current Equity:</span>
-                    <span className="text-green-400 font-bold">${(planData.accountEquity || 0).toLocaleString()}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Risk Parameters */}
-          <div className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-red-600 to-orange-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-300"></div>
-            <div className="relative bg-gray-900/80 backdrop-blur-sm border border-red-500/30 rounded-2xl p-6 hover:border-red-400/50 transition-all duration-300">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded-lg bg-red-500/20 border border-red-500/30">
-                  <AlertTriangle className="w-5 h-5 text-red-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-red-400">Risk Parameters</h3>
-              </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Risk Per Trade:</span>
-                  <span className="text-red-400 font-bold">{planData.riskPercentage || 0}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Risk:Reward:</span>
-                  <span className="text-white font-medium">1:{planData.riskRewardRatio || 0}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Risk Amount:</span>
-                  <span className="text-red-400 font-bold">${(planData.riskAmount || 0).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Profit Target:</span>
-                  <span className="text-green-400 font-bold">${(planData.profitAmount || 0).toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Trading Schedule */}
-          <div className="relative group">
-            <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-600 to-cyan-600 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-300"></div>
-            <div className="relative bg-gray-900/80 backdrop-blur-sm border border-blue-500/30 rounded-2xl p-6 hover:border-blue-400/50 transition-all duration-300">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="p-2 rounded-lg bg-blue-500/20 border border-blue-500/30">
-                  <Clock className="w-5 h-5 text-blue-400" />
-                </div>
-                <h3 className="text-lg font-semibold text-blue-400">Trading Schedule</h3>
-              </div>
-              <div className="space-y-3 text-sm">
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Trades Per Day:</span>
-                  <span className="text-white font-medium">{planData.tradesPerDay || '0'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Session:</span>
-                  <span className="text-blue-400 font-medium capitalize">{planData.tradingSession || 'Any'}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Max Daily Risk:</span>
-                  <span className="text-red-400 font-bold">${(planData.dailyRiskAmount || 0).toFixed(2)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-400">Daily Target:</span>
-                  <span className="text-green-400 font-bold">${(planData.dailyProfitTarget || 0).toFixed(2)}</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Challenge Analysis - Futuristic Stats */}
-        <div className="relative">
-          <div className="absolute -inset-1 bg-gradient-to-r from-blue-600 via-purple-600 to-cyan-600 rounded-3xl blur opacity-20"></div>
-          <div className="relative bg-gray-900/90 backdrop-blur-sm border border-blue-500/30 rounded-3xl p-8">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="p-3 rounded-xl bg-gradient-to-r from-blue-600/20 to-purple-600/20 border border-blue-500/30">
-                <BarChart3 className="w-6 h-6 text-blue-400" />
-              </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-                Challenge Analysis Matrix
-              </h2>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-              {/* Profit Target */}
-              <div className="relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-xl blur opacity-40 group-hover:opacity-60 transition duration-300"></div>
-                <div className="relative bg-gray-800/80 backdrop-blur-sm border border-green-500/40 rounded-xl p-6 text-center hover:border-green-400/60 transition-all duration-300">
-                  <div className="flex items-center justify-center mb-3">
-                    <Target className="w-8 h-8 text-green-400" />
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-300 mb-2">Profit Target</h3>
-                  <p className="text-3xl font-bold text-green-400 mb-1">${(planData.profitTarget || 0).toFixed(0)}</p>
-                  <p className="text-xs text-gray-400">{planData.profitTargetPercentage || 0}% of account</p>
-                </div>
-              </div>
-
-              {/* Trades Needed */}
-              <div className="relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-cyan-500 rounded-xl blur opacity-40 group-hover:opacity-60 transition duration-300"></div>
-                <div className="relative bg-gray-800/80 backdrop-blur-sm border border-blue-500/40 rounded-xl p-6 text-center hover:border-blue-400/60 transition-all duration-300">
-                  <div className="flex items-center justify-center mb-3">
-                    <Activity className="w-8 h-8 text-blue-400" />
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-300 mb-2">Trades Needed</h3>
-                  <p className="text-3xl font-bold text-blue-400 mb-1">{planData.tradesToPass || 0}</p>
-                  <p className="text-xs text-gray-400">Estimated trades</p>
-                </div>
-              </div>
-
-              {/* Days to Pass */}
-              <div className="relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-500 to-pink-500 rounded-xl blur opacity-40 group-hover:opacity-60 transition duration-300"></div>
-                <div className="relative bg-gray-800/80 backdrop-blur-sm border border-purple-500/40 rounded-xl p-6 text-center hover:border-purple-400/60 transition-all duration-300">
-                  <div className="flex items-center justify-center mb-3">
-                    <Clock className="w-8 h-8 text-purple-400" />
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-300 mb-2">Days to Pass</h3>
-                  <p className="text-3xl font-bold text-purple-400 mb-1">{planData.estimatedDaysToPass || 0}</p>
-                  <p className="text-xs text-gray-400">Trading days</p>
-                </div>
-              </div>
-
-              {/* Win Rate Needed */}
-              <div className="relative group">
-                <div className="absolute -inset-0.5 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl blur opacity-40 group-hover:opacity-60 transition duration-300"></div>
-                <div className="relative bg-gray-800/80 backdrop-blur-sm border border-orange-500/40 rounded-xl p-6 text-center hover:border-orange-400/60 transition-all duration-300">
-                  <div className="flex items-center justify-center mb-3">
-                    <TrendingUp className="w-8 h-8 text-orange-400" />
-                  </div>
-                  <h3 className="text-sm font-medium text-gray-300 mb-2">Win Rate Needed</h3>
-                  <p className="text-3xl font-bold text-orange-400 mb-1">
-                    {planData.profitTarget && planData.profitAmount && planData.tradesToPass ? 
-                      Math.ceil((planData.profitTarget / (planData.profitAmount * planData.tradesToPass)) * 100) : 0}%
-                  </p>
-                  <p className="text-xs text-gray-400">Minimum accuracy</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Additional Risk Metrics */}
-            <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-6">
-              {/* Drawdown Limit */}
-              <div className="bg-gray-800/60 border border-red-500/30 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <AlertTriangle className="w-4 h-4 text-red-400" />
-                  <span className="text-sm font-medium text-red-400">Max Drawdown</span>
-                </div>
-                <p className="text-xl font-bold text-red-400">{((planData.accountSize || 0) * 0.05).toFixed(0)}</p>
-                <p className="text-xs text-gray-400">5% of account size</p>
-              </div>
-
-              {/* Position Size */}
-              <div className="bg-gray-800/60 border border-yellow-500/30 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <Zap className="w-4 h-4 text-yellow-400" />
-                  <span className="text-sm font-medium text-yellow-400">Position Size</span>
-                </div>
-                <p className="text-xl font-bold text-yellow-400">{positionSizeInUnits.toFixed(0)}</p>
-                <p className="text-xs text-gray-400">Units per trade</p>
-              </div>
-
-              {/* Success Rate */}
-              <div className="bg-gray-800/60 border border-green-500/30 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <CheckCircle className="w-4 h-4 text-green-400" />
-                  <span className="text-sm font-medium text-green-400">Success Probability</span>
-                </div>
-                <p className="text-xl font-bold text-green-400">
-                  {planData.riskRewardRatio && planData.riskRewardRatio >= 2 ? '85%' : '65%'}
-                </p>
-                <p className="text-xs text-gray-400">Based on R:R ratio</p>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Trading Assets - Futuristic Design */}
-        {((planData.cryptoAssets && planData.cryptoAssets.length > 0) || (planData.forexAssets && planData.forexAssets.length > 0)) && (
-          <div className="relative">
-            <div className="absolute -inset-1 bg-gradient-to-r from-yellow-600 via-green-600 to-blue-600 rounded-3xl blur opacity-20"></div>
-            <div className="relative bg-gray-900/90 backdrop-blur-sm border border-cyan-500/30 rounded-3xl p-8">
-              <div className="flex items-center gap-3 mb-8">
-                <div className="p-3 rounded-xl bg-gradient-to-r from-cyan-600/20 to-blue-600/20 border border-cyan-500/30">
-                  <Activity className="w-6 h-6 text-cyan-400" />
-                </div>
-                <h2 className="text-2xl font-bold bg-gradient-to-r from-cyan-400 to-blue-400 bg-clip-text text-transparent">
-                  Trading Arsenal
-                </h2>
-              </div>
-              
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-                {planData.cryptoAssets && planData.cryptoAssets.length > 0 && (
-                  <div className="relative group">
-                    <div className="absolute -inset-0.5 bg-gradient-to-r from-yellow-500 to-orange-500 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-300"></div>
-                    <div className="relative bg-gray-800/80 backdrop-blur-sm border border-yellow-500/40 rounded-2xl p-6">
-                      <h3 className="text-xl font-bold text-yellow-400 mb-4 flex items-center gap-2">
-                        <Zap className="w-5 h-5" />
-                        Crypto Assets ({planData.cryptoAssets?.length || 0})
-                      </h3>
-                      <div className="flex flex-wrap gap-3">
-                        {planData.cryptoAssets.map((asset: string) => (
-                          <div key={asset} className="relative group/asset">
-                            <div className="absolute -inset-0.5 bg-gradient-to-r from-yellow-400 to-orange-400 rounded-lg blur opacity-40 group-hover/asset:opacity-70 transition duration-200"></div>
-                            <span className="relative bg-gray-900/90 text-yellow-400 px-4 py-2 rounded-lg text-sm font-medium border border-yellow-500/30 hover:border-yellow-400/60 transition-all duration-200">
-                              {asset}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-                
-                {planData.forexAssets && planData.forexAssets.length > 0 && (
-                  <div className="relative group">
-                    <div className="absolute -inset-0.5 bg-gradient-to-r from-green-500 to-emerald-500 rounded-2xl blur opacity-30 group-hover:opacity-50 transition duration-300"></div>
-                    <div className="relative bg-gray-800/80 backdrop-blur-sm border border-green-500/40 rounded-2xl p-6">
-                      <h3 className="text-xl font-bold text-green-400 mb-4 flex items-center gap-2">
-                        <TrendingUp className="w-5 h-5" />
-                        Forex Pairs ({planData.forexAssets?.length || 0})
-                      </h3>
-                      <div className="flex flex-wrap gap-3">
-                        {planData.forexAssets.map((pair: string) => (
-                          <div key={pair} className="relative group/pair">
-                            <div className="absolute -inset-0.5 bg-gradient-to-r from-green-400 to-emerald-400 rounded-lg blur opacity-40 group-hover/pair:opacity-70 transition duration-200"></div>
-                            <span className="relative bg-gray-900/90 text-green-400 px-4 py-2 rounded-lg text-sm font-medium border border-green-500/30 hover:border-green-400/60 transition-all duration-200">
-                              {pair}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Session Recommendation - Enhanced */}
-        <div className="relative">
-          <div className="absolute -inset-1 bg-gradient-to-r from-indigo-600 to-blue-600 rounded-3xl blur opacity-20"></div>
-          <div className="relative bg-gray-900/90 backdrop-blur-sm border border-indigo-500/30 rounded-3xl p-8">
-            <div className="flex items-center gap-3 mb-6">
-              <div className="p-3 rounded-xl bg-gradient-to-r from-indigo-600/20 to-blue-600/20 border border-indigo-500/30">
-                <Clock className="w-6 h-6 text-indigo-400" />
-              </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-indigo-400 to-blue-400 bg-clip-text text-transparent">
-                Optimal Trading Session
-              </h2>
-            </div>
-            <div className="bg-gradient-to-r from-indigo-600/10 to-blue-600/10 border border-indigo-500/40 rounded-2xl p-6 backdrop-blur-sm">
-              <p className="text-indigo-300 text-lg leading-relaxed">{planData.sessionRecommendation}</p>
-            </div>
-          </div>
-        </div>
-
-        {/* Trade Execution Matrix - Futuristic Table */}
-        <div className="relative">
-          <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 via-pink-600 to-red-600 rounded-3xl blur opacity-20"></div>
-          <div className="relative bg-gray-900/90 backdrop-blur-sm border border-purple-500/30 rounded-3xl p-8">
-            <div className="flex items-center gap-3 mb-8">
-              <div className="p-3 rounded-xl bg-gradient-to-r from-purple-600/20 to-pink-600/20 border border-purple-500/30">
-                <BarChart3 className="w-6 h-6 text-purple-400" />
-              </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">
-                Execution Matrix Protocol
-              </h2>
-            </div>
-            
-            <div className="overflow-x-auto futuristic-scrollbar">
-              <div className="min-w-full bg-gray-800/60 rounded-2xl border border-gray-700/50 overflow-hidden">
-                <div className="grid grid-cols-5 bg-gradient-to-r from-gray-800 to-gray-700 text-white font-semibold">
-                  <div className="p-4 border-r border-gray-600/50">Trade #</div>
-                  <div className="p-4 border-r border-gray-600/50">Risk Amount</div>
-                  <div className="p-4 border-r border-gray-600/50">Profit Target</div>
-                  <div className="p-4 border-r border-gray-600/50">Cumulative</div>
-                  <div className="p-4">Progress</div>
-                </div>
-                
-                <div className="divide-y divide-gray-700/30">
-                  {planData.tradeByTradePlan && planData.tradeByTradePlan.slice(0, 15).map((trade: any, i: number) => {
-                    const cumulativeProfit = trade.balance + trade.profitTarget - planData.accountSize;
-                    const progressPercentage = planData.profitTarget ? (cumulativeProfit / planData.profitTarget) * 100 : 0;
-                    return (
-                      <div key={i} className="grid grid-cols-5 hover:bg-gray-700/30 transition-all duration-200 group">
-                        <div className="p-4 border-r border-gray-700/30 text-gray-300 group-hover:text-white">
-                          Trade {trade.trade}
-                        </div>
-                        <div className="p-4 border-r border-gray-700/30 text-red-400 font-bold">
-                          ${trade.riskAmount.toFixed(2)}
-                        </div>
-                        <div className="p-4 border-r border-gray-700/30 text-green-400 font-bold">
-                          ${trade.profitTarget.toFixed(2)}
-                        </div>
-                        <div className="p-4 border-r border-gray-700/30 text-cyan-400 font-bold">
-                          ${cumulativeProfit.toFixed(2)}
-                        </div>
-                        <div className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="flex-1 bg-gray-700 rounded-full h-3 overflow-hidden">
-                              <div
-                                className="bg-gradient-to-r from-green-500 via-blue-500 to-purple-500 h-full rounded-full transition-all duration-500 ease-out"
-                                style={{ width: `${Math.min(progressPercentage, 100)}%` }}
-                              ></div>
-                            </div>
-                            <span className="text-xs text-gray-400 font-medium min-w-[40px]">
-                              {progressPercentage.toFixed(1)}%
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                  
-                  {(tradesToPass || 0) > 15 && (
-                    <div className="grid grid-cols-5 bg-gray-800/40">
-                      <div className="col-span-5 p-6 text-center text-gray-400 italic">
-                        <div className="flex items-center justify-center gap-2">
-                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
-                          <span>... and {(tradesToPass || 0) - 15} more trades to reach your target</span>
-                          <div className="w-2 h-2 bg-gray-500 rounded-full animate-pulse"></div>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Action Button - Futuristic */}
-        <div className="text-center mt-12">
-          <div className="relative inline-block">
-            <div className="absolute -inset-1 bg-gradient-to-r from-green-600 to-emerald-600 rounded-2xl blur opacity-50"></div>
-            {user?.membershipTier === 'kickstarter' ? (
-              <button
-                onClick={() => navigate('/upload-screenshot')}
-                className="relative bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 border border-green-500/30 shadow-lg shadow-green-500/25"
-              >
-                <span className="flex items-center gap-3">
-                  <Shield className="w-5 h-5" />
-                  Proceed to Upload Screenshot
-                  <Shield className="w-5 h-5" />
-                </span>
-              </button>
-            ) : (
-              <button
-                onClick={async () => {
-                  try {
-                    console.log('Attempting to navigate to dashboard...');
-                    
-                    // Save plan if needed
-                    if (fromQuestionnaire && currentPlan) {
-                      console.log('Saving plan before navigation...');
-                      await savePlanToBackend(currentPlan);
-                    }
-                    
-                    // First try programmatic navigation
-                    console.log('Attempting programmatic navigation to /dashboard');
-                    navigate('/dashboard', { 
-                      replace: true,
-                      state: { from: 'risk-management-plan' }
-                    });
-                    
-                    // Fallback to window.location if navigation doesn't happen
-                    const fallbackTimer = setTimeout(() => {
-                      console.log('Fallback: Using window.location');
-                      window.location.href = '/dashboard';
-                    }, 500);
-                    
-                    // Cleanup timer if navigation succeeds
-                    window.addEventListener('beforeunload', () => clearTimeout(fallbackTimer));
-                    
-                  } catch (error) {
-                    console.error('Navigation error:', error);
-                    // Fallback to window.location on error
-                    window.location.href = '/dashboard';
-                  }
-                }}
-                className="relative bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-500 hover:to-emerald-500 text-white font-bold py-4 px-8 rounded-2xl transition-all duration-300 transform hover:scale-105 border border-green-500/30 shadow-lg shadow-green-500/25"
-              >
-                <span className="flex items-center gap-3">
-                  <Brain className="w-5 h-5" />
-                  {fromQuestionnaire ? 'Save Plan & Go to Dashboard' : 'Proceed to Dashboard'}
-                  <Target className="w-5 h-5" />
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
-        
-        </div>
-      </div>
-    </div>
+      {renderTheme()}
+    </FuturisticScene>
   );
 };
 
-export default RiskManagementPlan;
+export default Dashboard;

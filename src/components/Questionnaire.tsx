@@ -1,426 +1,403 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useLocation } from 'react-router-dom';
-import CustomSelect from './CustomSelect';
-import FuturisticBackground from './FuturisticBackground';
+import { useState, useEffect } from 'react';
+import { TradingState, TradeOutcome, Signal } from '../trading/types';
+import { openTrade, closeTrade } from '../trading/tradeManager';
+import { isDailyLossLimitReached } from '../trading/riskManager';
 import { useUser } from '../contexts/UserContext';
-import { propFirms } from '../data/propFirms';
+import { useTradingPlan } from '../contexts/TradingPlanContext';
 import api from '../api';
+import ConsentForm from './ConsentForm';
+import FuturisticScene from './3D/FuturisticScene';
+import AnimatedBackground from './3D/AnimatedBackground';
+import FuturisticCursor from './FuturisticCursor';
+import DashboardConcept1 from './DashboardConcept1';
+import DashboardConcept2 from './DashboardConcept2';
+import DashboardConcept3 from './DashboardConcept3';
+import DashboardConcept4 from './DashboardConcept4';
 import { logActivity } from '../api/activity';
 
-interface QuestionnaireAnswers {
-  tradesPerDay: string;
-  tradingSession: string;
-  cryptoAssets: string[];
-  forexAssets: string[];
-  hasAccount: 'yes' | 'no';
-  accountEquity: number | string;
-  propFirm: string;
-  accountType: string;
-  accountSize: number | string;
-  riskPercentage: number;
-  riskRewardRatio: string;
-  accountScreenshot: string;
-}
-
-const tradesPerDayOptions = [
-  { value: '1-2', label: '1-2 (Recommended)' },
-  { value: '3-5', label: '3-5' },
-  { value: '6-10', label: '6-10' },
-  { value: '10+', label: '10+' },
-];
-
-const tradingSessionOptions = [
-  { value: 'asian', label: 'Asian Session (Tokyo)' },
-  { value: 'european', label: 'European Session (London)' },
-  { value: 'us', label: 'US Session (New York)' },
-  { value: 'any', label: 'Any/All Sessions' },
-];
-
-const cryptoOptions = [
-  "BTC", "ETH", "SOL", "XRP", "ADA", "DOGE", "AVAX", "DOT", "MATIC", "LTC",
-  "SHIB", "TRX", "LINK", "BCH", "XLM", "ALGO", "ATOM", "VET", "FIL", "ICP"
-];
-
-const forexOptionsList = {
-  "Commodities & Indices": ["XAU/USD", "XAG/USD", "USOIL", "US30", "US100"],
-  Majors: ["EURUSD", "GBPUSD", "USDJPY", "USDCAD", "AUDUSD", "USDCHF", "NZDUSD"],
-  Minors: ["EURGBP", "EURJPY", "GBPJPY", "AUDJPY", "CADJPY", "CHFJPY", "NZDJPY", "EURAUD", "GBPAUD"],
-  Exotics: ["USDTRY", "USDZAR", "USDMXN", "USDNOK", "USDSEK", "USDSGD", "USDHKD"]
-};
-
-const allCryptoOptions = cryptoOptions.map(c => ({ value: c, label: c }));
-const allForexOptions = () => {
-  const options = Object.entries(forexOptionsList).map(([group, pairs]) => ({
-    label: group,
-    options: pairs.map(p => ({ value: p, label: p }))
-  }));
-  const savedPairs = localStorage.getItem('customForexPairs');
-  const customPairs = savedPairs ? JSON.parse(savedPairs) : [];
-  if (customPairs.length > 0) {
-    options.push({
-      label: 'Custom',
-      options: customPairs.map((p: string) => ({ value: p, label: p }))
-    });
-  }
-  return options;
-};
-
-const Questionnaire: React.FC = () => {
-  const [answers, setAnswers] = useState<QuestionnaireAnswers>({
-    tradesPerDay: '1-2',
-    tradingSession: 'any',
-    cryptoAssets: [],
-    forexAssets: [],
-    hasAccount: 'no',
-    accountEquity: '',
-    propFirm: '',
-    accountType: '',
-    accountSize: '',
-    riskPercentage: 1,
-    riskRewardRatio: '2',
-    accountScreenshot: '',
-  });
-  const [customPair, setCustomPair] = useState('');
-  const [customPairs, setCustomPairs] = useState<string[]>(() => {
-    const savedPairs = localStorage.getItem('customForexPairs');
-    return savedPairs ? JSON.parse(savedPairs) : [];
-  });
-  const [isLoading, setIsLoading] = useState(false);
-  const [screenshot, setScreenshot] = useState<File | null>(null);
-  const [screenshotPreview, setScreenshotPreview] = useState<string>('');
-  const navigate = useNavigate();
-  const location = useLocation();
+const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
   const { user } = useUser();
-  
-  // Get state from location
-  const locationState = location.state as { fromPayment?: boolean; plan?: any } | undefined;
+  const { tradingPlan } = useTradingPlan();
+  const [theme, setTheme] = useState(() => {
+    // Load persisted theme from localStorage
+    const savedTheme = localStorage.getItem('dashboard_selected_concept');
+    return savedTheme || 'concept1';
+  });
+  const [tradingState, setTradingState] = useState<TradingState | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showConsentForm, setShowConsentForm] = useState(false);
 
+  // Check for consent on mount
   useEffect(() => {
-    if (!user || user.membershipTier === 'free') {
-      navigate('/payment');
+    const consentGiven = localStorage.getItem('user_consent_accepted');
+    if (!consentGiven && user?.setupComplete) {
+      setShowConsentForm(true);
     }
-  }, [user, navigate]);
+  }, [user]);
 
-  const handleSubmit = async () => {
-    setIsLoading(true);
-    localStorage.setItem('questionnaireAnswers', JSON.stringify(answers));
-    console.log('User Answers:', answers);
+  // Load initial data from API and localStorage
+  useEffect(() => {
+    const initializeData = async () => {
+      if (user?.email) {
+        setIsLoading(true);
+        const stateKey = `trading_state_${user.email}`;
+        
+        // Restore dashboard state from user backup if available
+        const backupData = localStorage.getItem(`user_backup_${user.email}`);
+        if (backupData) {
+          try {
+            const backup = JSON.parse(backupData);
+            if (backup.dashboardState) {
+              // Restore dashboard preferences
+              if (backup.dashboardState.activeTab) {
+                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
+              }
+              if (backup.dashboardState.selectedTimezone) {
+                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
+              }
+              if (backup.dashboardState.preferences) {
+                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
+              }
+            }
+          } catch (error) {
+            console.warn('Could not restore dashboard state:', error);
+          }
+        }
+        
+        // Load data from localStorage first, then try API as enhancement
+        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
+        const localState = localStorage.getItem(stateKey);
+        const questionnaireData = localStorage.getItem('questionnaireAnswers');
+        const riskPlanData = localStorage.getItem('riskManagementPlan');
+        
+        let parsedQuestionnaire = null;
+        let parsedRiskPlan = null;
+        
+        try {
+          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
+          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
+        } catch (parseError) {
+          console.warn('Error parsing questionnaire data, using defaults');
+        }
+        
+        // Create dashboard data from questionnaire if available
+        const accountValue = parsedQuestionnaire?.hasAccount === 'yes' 
+          ? parsedQuestionnaire?.accountEquity 
+          : parsedQuestionnaire?.accountSize;
 
-    // Check if coming from payment flow
-    const fromPayment = locationState?.fromPayment;
-    const paymentPlan = locationState?.plan;
+        const fallbackDashboardData = {
+          userProfile: {
+            propFirm: parsedQuestionnaire?.propFirm || 'Not Set',
+            accountType: parsedQuestionnaire?.accountType || 'Not Set',
+            accountSize: accountValue || 100000,
+            riskPerTrade: `${parsedQuestionnaire?.riskPercentage || 1}%`,
+            experience: parsedQuestionnaire?.experience || 'intermediate',
+            uniqueId: user?.uniqueId || 'Not Set'
+          },
+          performance: {
+            accountBalance: accountValue || parsedRiskPlan?.accountSize || 100000,
+            totalPnl: 0,
+            winRate: 0,
+            totalTrades: 0
+          },
+          riskProtocol: {
+            maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
+            riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
+            maxDrawdown: '10%'
+          }
+        };
+        
+        // Set dashboard data from localStorage or fallback
+        if (localDashboardData) {
+          try {
+            setDashboardData(JSON.parse(localDashboardData));
+          } catch {
+            setDashboardData(fallbackDashboardData);
+          }
+        } else {
+          setDashboardData(fallbackDashboardData);
+        }
+        
+        // Initialize trading state
+        if (localState) {
+          try {
+            setTradingState(JSON.parse(localState));
+          } catch {
+            // Create new state if parsing fails
+            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+              ? parsedQuestionnaire?.accountEquity 
+              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+            const initialState: TradingState = {
+              initialEquity,
+              currentEquity: initialEquity,
+              trades: [],
+              openPositions: [],
+              riskSettings: {
+                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+                dailyLossLimit: 5,
+                consecutiveLossesLimit: 3,
+              },
+              performanceMetrics: {
+                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+                consecutiveLosses: 0,
+              },
+              dailyStats: { pnl: 0, trades: 0, initialEquity },
+            };
+            setTradingState(initialState);
+            localStorage.setItem(stateKey, JSON.stringify(initialState));
+          }
+        } else {
+          // Create initial state for new users
+          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+            ? parsedQuestionnaire?.accountEquity 
+            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+          const initialState: TradingState = {
+            initialEquity,
+            currentEquity: initialEquity,
+            trades: [],
+            openPositions: [],
+            riskSettings: {
+              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+              dailyLossLimit: 5,
+              consecutiveLossesLimit: 3,
+            },
+            performanceMetrics: {
+              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+              consecutiveLosses: 0,
+            },
+            dailyStats: { pnl: 0, trades: 0, initialEquity },
+          };
+          setTradingState(initialState);
+          localStorage.setItem(stateKey, JSON.stringify(initialState));
+        }
+        
+        try {
+          const response = await api.get('/api/dashboard-data');
+          setDashboardData(response.data);
+        } catch (error) {
+          console.error('Failed to fetch dashboard data from API, using fallback.', error);
+        }
+        
+        // Generate comprehensive mock dashboard data if none exists
+        if (!localDashboardData) {
+          const mockDashboardData = {
+            user: {
+              name: user.name || 'Trader',
+              email: user.email,
+              membershipTier: user.membershipTier || 'professional',
+              joinDate: new Date().toISOString(),
+              lastLogin: new Date().toISOString(),
+            },
+            account: {
+              balance: tradingPlan?.userProfile?.initialBalance || 10000,
+              equity: tradingPlan?.userProfile?.initialBalance || 10000,
+              margin: 0,
+              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
+              marginLevel: 0
+            },
+            performance: {
+              totalPnl: 0,
+              winRate: 0,
+              totalTrades: 0,
+              profitFactor: 0,
+              maxDrawdown: 0
+            },
+            signals: [],
+            news: [],
+            lastUpdated: new Date().toISOString()
+          };
+          
+          setDashboardData(mockDashboardData);
+          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
+        }
+        
+        setIsLoading(false);
+      }
+    };
+    initializeData();
+  }, [user, tradingPlan]);
 
-    // Mark questionnaire as completed
-    localStorage.setItem('questionnaire_completed', 'true');
-
-    try {
-      // Try to save questionnaire answers to backend (optional)
-      await api.post('/api/user/questionnaire', answers);
-      logActivity('questionnaire_submit', { answers });
-      console.log('Questionnaire saved to backend successfully');
-    } catch (error) {
-      console.warn('Backend not available, continuing with local storage:', error);
-      // Continue without backend - this is expected in demo/offline mode
+  // Persist data to localStorage on change
+  useEffect(() => {
+    if (user?.email && tradingState) {
+      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
     }
+    if (user?.email && dashboardData) {
+      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
+    }
+  }, [tradingState, dashboardData, user?.email]);
 
-    // Always navigate to risk management plan regardless of backend status
-    navigate('/risk-management-plan', { 
-      state: { 
-        fromQuestionnaire: true,
-        questionnaireData: answers,
-        plan: paymentPlan,
-        answers: answers,
-      } 
-    });
-    
-    setIsLoading(false);
+  const handleConsentAccept = () => {
+    setShowConsentForm(false);
   };
 
-  const isFormValid = () => {
-    const requiredFields = ['propFirm', 'accountType', 'accountSize', 'tradesPerDay', 'tradingSession'];
-    for (const field of requiredFields) {
-      if (!answers[field as keyof QuestionnaireAnswers]) {
-        console.log(`Validation failed: ${field} is missing`);
-        return false;
+  const handleConsentDecline = () => {
+    onLogout();
+  };
+
+  const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
+    if (tradingState) {
+      if (isDailyLossLimitReached(tradingState)) {
+        alert("You have hit your daily loss limit. No more trades are allowed today.");
+        return;
       }
+      const stateAfterOpen = openTrade(tradingState, signal);
+      const newTrade = stateAfterOpen.openPositions[stateAfterOpen.openPositions.length - 1];
+      const finalState = closeTrade(stateAfterOpen, newTrade.id, outcome, pnl);
+      setTradingState(finalState);
     }
+  };
 
-    if (answers.hasAccount === 'yes' && !answers.accountEquity) {
-      console.log('Validation failed: accountEquity is missing');
-      return false;
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
+        <FuturisticScene />
+        <AnimatedBackground />
+        <FuturisticCursor />
+        
+        {/* Futuristic Loading Animation */}
+        <div className="relative z-10 text-center">
+          {/* Main Loading Circle */}
+          <div className="relative mb-8">
+            <div className="w-32 h-32 mx-auto relative">
+              {/* Outer rotating ring */}
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
+              {/* Middle rotating ring */}
+              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+              {/* Inner pulsing core */}
+              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
+              {/* Center dot */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
+            </div>
+          </div>
+          
+          {/* Loading Text with Typewriter Effect */}
+          <div className="text-2xl font-bold mb-4">
+            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
+              INITIALIZING DASHBOARD
+            </span>
+          </div>
+          
+          {/* Progress Bars */}
+          <div className="space-y-3 max-w-md mx-auto">
+            <div className="flex items-center space-x-3">
+              <div className="text-cyan-400 text-sm font-mono w-24 text-left">CORE_SYS</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse" style={{width: '85%'}}></div>
+              </div>
+              <div className="text-cyan-400 text-xs font-mono w-8">85%</div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <div className="text-blue-400 text-sm font-mono w-24 text-left">DATA_SYNC</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full animate-pulse" style={{width: '72%'}}></div>
+              </div>
+              <div className="text-blue-400 text-xs font-mono w-8">72%</div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <div className="text-purple-400 text-sm font-mono w-24 text-left">UI_LOAD</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
+              </div>
+              <div className="text-purple-400 text-xs font-mono w-8">91%</div>
+            </div>
+          </div>
+          
+          {/* Status Messages */}
+          <div className="mt-6 text-gray-400 text-sm font-mono">
+            <div className="animate-pulse">» Establishing secure connection...</div>
+            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
+            <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
+          </div>
+          
+          {/* Scanning Effect */}
+          <div className="absolute -inset-4 opacity-30">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
+            <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
+            <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-gradient-to-b from-transparent via-pink-400 to-transparent animate-pulse" style={{animationDelay: '1.5s'}}></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user.setupComplete) {
+    const message = user.membershipTier === 'kickstarter'
+      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
+      : "Please complete the setup process to access your dashboard.";
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
+        <FuturisticScene />
+        <AnimatedBackground />
+        <FuturisticCursor />
+        <div className="relative z-10 text-center">
+          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
+          <p className="text-gray-400">{message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const renderTheme = () => {
+    const props = {
+      onLogout,
+      tradingState,
+      dashboardData,
+      handleMarkAsTaken,
+      setTradingState,
+      user,
+    };
+    switch (theme) {
+      case 'concept1':
+        return <DashboardConcept1 {...props} />;
+      case 'concept2':
+        return <DashboardConcept2 {...props} />;
+      case 'concept3':
+        return <DashboardConcept3 {...props} />;
+      case 'concept4':
+        return <DashboardConcept4 {...props} />;
+      default:
+        return <DashboardConcept1 {...props} />;
     }
-
-    if (!screenshot) {
-      console.log('Validation failed: screenshot is missing');
-      return false;
-    }
-
-    console.log('Validation passed');
-    return true;
   };
 
   return (
-    <div className="min-h-screen text-white flex items-center justify-center p-4 relative">
-      <FuturisticBackground />
-      <div className="relative bg-transparent p-8 rounded-2xl w-full max-w-3xl z-10">
-        <div className="relative z-10">
-          <h2 className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</h2>
-        <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
-
-        <div className="space-y-6">
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">Prop Firm</label>
-            <CustomSelect
-              options={propFirms.map(firm => ({ value: firm.name, label: firm.name }))}
-              value={answers.propFirm}
-              onChange={(value) => {
-                const selectedFirm = propFirms.find(firm => firm.name === value);
-                setAnswers({
-                  ...answers,
-                  propFirm: value as string,
-                  accountType: '',
-                  accountSize: '',
-                });
-              }}
-              placeholder="Select a prop firm..."
-            />
-          </div>
-
-          {answers.propFirm && (
-            <>
-              <div>
-                <label className="block mb-2 text-lg font-semibold text-gray-300">Account Type</label>
-                <CustomSelect
-                  options={propFirms.find(firm => firm.name === answers.propFirm)?.accountTypes.map(type => ({ value: type, label: type })) || []}
-                  value={answers.accountType}
-                  onChange={(value) => setAnswers({ ...answers, accountType: value as string, accountSize: '' })}
-                  placeholder="Select an account type..."
-                />
-              </div>
-              {answers.accountType && (
-                <div>
-                  <label className="block mb-2 text-lg font-semibold text-gray-300">Account Size</label>
-                  <CustomSelect
-                    options={propFirms.find(firm => firm.name === answers.propFirm)?.accountSizes.map(size => ({ value: String(size), label: `$${size.toLocaleString()}` })) || []}
-                    value={String(answers.accountSize)}
-                    onChange={(value) => setAnswers({ ...answers, accountSize: Number(value) })}
-                    placeholder="Select an account size..."
-                  />
-                </div>
-              )}
-            </>
-          )}
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">Risk per Trade</label>
-            <div className="flex items-center space-x-4">
-              <input
-                type="range"
-                min="0.5"
-                max="2.5"
-                step="0.1"
-                value={answers.riskPercentage}
-                onChange={(e) => setAnswers({ ...answers, riskPercentage: parseFloat(e.target.value) })}
-                className="w-full h-2 bg-gray-700 rounded-lg appearance-none cursor-pointer"
-              />
-              <span className="text-lg font-semibold text-blue-400">{answers.riskPercentage.toFixed(1)}%</span>
-            </div>
-          </div>
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">Preferred Risk:Reward Ratio</label>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              {['1', '2', '3', '4'].map((ratio) => (
-                <button
-                  key={ratio}
-                  type="button"
-                  onClick={() => setAnswers({ ...answers, riskRewardRatio: ratio })}
-                  className={`p-3 rounded-lg border-2 transition-all duration-300 font-semibold ${
-                    answers.riskRewardRatio === ratio
-                      ? 'border-blue-500 bg-blue-500/20 text-blue-400'
-                      : 'border-gray-600 bg-gray-700/50 text-gray-300 hover:border-blue-400 hover:bg-blue-400/10'
-                  }`}
-                >
-                  1:{ratio}
-                </button>
-              ))}
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              Default is 1:2. This means for every $1 you risk, you aim to make $2 in profit.
-            </p>
-          </div>
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">How many trades do you take per day?</label>
-            <CustomSelect
-              options={tradesPerDayOptions}
-              value={answers.tradesPerDay}
-              onChange={(value) => setAnswers({ ...answers, tradesPerDay: value as string })}
-            />
-            <p className="text-xs text-gray-400 mt-1">Note: You can change this in your settings once per week.</p>
-          </div>
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">Do you have an account already?</label>
-            <CustomSelect
-              options={[{ value: 'no', label: 'No' }, { value: 'yes', label: 'Yes' }]}
-              value={answers.hasAccount}
-              onChange={(value) => setAnswers({ ...answers, hasAccount: value as 'yes' | 'no' })}
-            />
-          </div>
-
-          {answers.hasAccount === 'yes' && (
-            <div>
-              <label className="block mb-2 text-lg font-semibold text-gray-300">Current equity of that account</label>
-              <input
-                type="number"
-                value={answers.accountEquity}
-                onChange={(e) => setAnswers({ ...answers, accountEquity: e.target.value === '' ? '' : Number(e.target.value) })}
-                className="w-full p-2 bg-gray-700 border border-gray-600 rounded-lg text-white"
-                placeholder="Enter your account equity"
-              />
-            </div>
-          )}
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">Which trading session suits you best?</label>
-            <CustomSelect
-              options={tradingSessionOptions}
-              value={answers.tradingSession}
-              onChange={(value) => setAnswers({ ...answers, tradingSession: value as string })}
-            />
-          </div>
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">Which crypto assets do you trade?</label>
-            <CustomSelect
-              options={allCryptoOptions}
-              value={answers.cryptoAssets}
-              onChange={(value) => setAnswers({ ...answers, cryptoAssets: value as string[] })}
-              multiple
-              placeholder="Select crypto assets..."
-            />
-            <button
-              onClick={() => setAnswers({ ...answers, cryptoAssets: cryptoOptions })}
-              className="text-xs text-blue-400 mt-1 hover:underline"
-            >
-              Select All
-            </button>
-          </div>
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">Which forex pairs do you trade?</label>
-            <CustomSelect
-              options={allForexOptions()}
-              value={answers.forexAssets}
-              onChange={(value) => setAnswers({ ...answers, forexAssets: value as string[] })}
-              multiple
-              placeholder="Select forex pairs..."
-            />
-            <button
-              onClick={() => setAnswers({ ...answers, forexAssets: Object.values(forexOptionsList).flat().concat(customPairs) })}
-              className="text-xs text-blue-400 mt-1 hover:underline"
-            >
-              Select All
-            </button>
-            <div className="mt-2">
-              <p className="text-xs text-gray-400">Your pair not here? Add it below:</p>
-              <div className="flex items-center mt-1">
-                <input
-                  type="text"
-                  value={customPair}
-                  onChange={(e) => setCustomPair(e.target.value.toUpperCase())}
-                  placeholder="e.g., EURNOK"
-                  className="w-full p-2 bg-gray-700 border border-gray-600 rounded-l-lg text-white"
-                />
-                <button
-                  onClick={() => {
-                    if (customPair && !customPairs.includes(customPair)) {
-                      const newCustomPairs = [...customPairs, customPair];
-                      setCustomPairs(newCustomPairs);
-                      localStorage.setItem('customForexPairs', JSON.stringify(newCustomPairs));
-                      setCustomPair('');
-                    }
-                  }}
-                  className="p-2 bg-blue-600 rounded-r-lg hover:bg-blue-700"
-                >
-                  Add
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <label className="block mb-2 text-lg font-semibold text-gray-300">
-              Upload Account Screenshot <span className="text-red-400">*</span>
-            </label>
-            <div className="border-2 border-dashed border-gray-600 rounded-lg p-6 text-center">
-              <input
-                type="file"
-                accept="image/*"
-                onChange={(e) => {
-                  const file = e.target.files ? e.target.files[0] : null;
-                  setScreenshot(file);
-                  if (file) {
-                    const reader = new FileReader();
-                    reader.onload = (e) => {
-                      setScreenshotPreview(e.target?.result as string);
-                    };
-                    reader.readAsDataURL(file);
-                  } else {
-                    setScreenshotPreview('');
-                  }
-                }}
-                className="hidden"
-                id="screenshot-upload"
-                required
-              />
-              <label htmlFor="screenshot-upload" className="cursor-pointer">
-                {screenshotPreview ? (
-                  <div className="space-y-4">
-                    <img 
-                      src={screenshotPreview} 
-                      alt="Account Screenshot Preview" 
-                      className="max-w-full max-h-48 mx-auto rounded-lg"
-                    />
-                    <p className="text-green-400">✓ Screenshot uploaded successfully</p>
-                    <p className="text-sm text-gray-400">Click to change screenshot</p>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div className="text-6xl text-gray-400">📷</div>
-                    <div>
-                      <p className="text-lg font-semibold text-white">Upload Account Screenshot</p>
-                      <p className="text-sm text-gray-400">Click here or drag and drop your screenshot</p>
-                    </div>
-                  </div>
-                )}
-              </label>
-            </div>
-            <div className="mt-3 p-3 bg-yellow-600/20 border border-yellow-600 rounded-lg">
-              <p className="text-yellow-300 text-sm font-semibold mb-2">⚠️ IMPORTANT REQUIREMENTS:</p>
-              <ul className="text-xs text-gray-300 space-y-1">
-                <li>• Account number must be clearly visible</li>
-                <li>• Screenshot must show your trading platform/broker interface</li>
-                <li>• Image should be clear and readable</li>
-                <li>• This is required for account verification and support purposes</li>
-                <li>• Your screenshot will be securely stored and only accessible to support staff</li>
-              </ul>
-            </div>
-          </div>
-        </div>
-
-        <button
-          onClick={handleSubmit}
-          disabled={!isFormValid() || isLoading}
-          className="w-full mt-8 p-4 bg-blue-600 rounded-lg hover:bg-blue-700 transition-all duration-300 text-lg font-semibold shadow-lg hover:shadow-blue-500/50 disabled:bg-blue-800 disabled:cursor-not-allowed"
+    <div className="min-h-screen bg-gray-950 font-inter relative">
+      <FuturisticScene />
+      <AnimatedBackground />
+      <FuturisticCursor />
+      <ConsentForm 
+        isOpen={showConsentForm}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+      <div className="theme-switcher fixed top-4 right-4 z-50">
+        <select 
+          onChange={(e) => {
+            const newTheme = e.target.value;
+            setTheme(newTheme);
+            // Persist theme selection to localStorage
+            localStorage.setItem('dashboard_selected_concept', newTheme);
+            logActivity('theme_change', { theme: newTheme });
+          }}
+          value={theme}
+          className="bg-gray-800 text-white p-2 rounded border border-gray-600"
         >
-          {isLoading ? 'Saving...' : 'Save Preferences & Continue'}
-        </button>
-        </div>
+          <option value="concept1">Concept 1</option>
+          <option value="concept2">Concept 2</option>
+          <option value="concept3">Concept 3</option>
+          <option value="concept4">Concept 4</option>
+        </select>
       </div>
+      {renderTheme()}
     </div>
   );
 };
 
-export default Questionnaire;
+export default Dashboard;

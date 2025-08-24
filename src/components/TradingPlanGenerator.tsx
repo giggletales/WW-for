@@ -1,561 +1,402 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { Target, Calendar, DollarSign, TrendingUp, AlertTriangle, CheckCircle, ArrowRight, ArrowLeft, Download } from 'lucide-react';
-import { useTradingPlan } from '../contexts/TradingPlanContext';
+import { useState, useEffect } from 'react';
+import { TradingState, TradeOutcome, Signal } from '../trading/types';
+import { openTrade, closeTrade } from '../trading/tradeManager';
+import { isDailyLossLimitReached } from '../trading/riskManager';
 import { useUser } from '../contexts/UserContext';
-import Header from './Header';
+import { useTradingPlan } from '../contexts/TradingPlanContext';
 import api from '../api';
+import ConsentForm from './ConsentForm';
+import FuturisticScene from './3D/FuturisticScene';
+import '../styles/3d-animations.css';
+import DashboardConcept1 from './DashboardConcept1';
+import DashboardConcept2 from './DashboardConcept2';
+import DashboardConcept3 from './DashboardConcept3';
+import DashboardConcept4 from './DashboardConcept4';
+import { logActivity } from '../api/activity';
 
-const TradingPlanGenerator: React.FC = () => {
-  const navigate = useNavigate();
-  const { propFirm, accountConfig, riskConfig, updateTradingPlan, tradingPlan } = useTradingPlan();
-  const { user, setUser } = useUser();
-  const [selectedPlan, setSelectedPlan] = useState<'30day' | '45day' | '60day'>('30day');
+const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
+  const { user } = useUser();
+  const { tradingPlan } = useTradingPlan();
+  const [theme, setTheme] = useState(() => {
+    // Load persisted theme from localStorage
+    const savedTheme = localStorage.getItem('dashboard_selected_concept');
+    return savedTheme || 'concept1';
+  });
+  const [tradingState, setTradingState] = useState<TradingState | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [showConsentForm, setShowConsentForm] = useState(false);
 
+  // Check for consent on mount
   useEffect(() => {
-    const generatePlan = async () => {
-      if (propFirm && accountConfig && riskConfig) {
-        try {
-          const response = await api.post('/api/generate-plan', {
-            answers: JSON.parse(localStorage.getItem('questionnaireAnswers') || '{}'),
-            propFirmRules: {
-              dailyLossLimit: propFirm.dailyLossLimit,
-              maximumLoss: propFirm.maximumLoss,
-              profitTargets: propFirm.profitTargets,
-              minTradingDays: propFirm.minTradingDays,
-              consistencyRule: propFirm.consistencyRule,
+    const consentGiven = localStorage.getItem('user_consent_accepted');
+    if (!consentGiven && user?.setupComplete) {
+      setShowConsentForm(true);
+    }
+  }, [user]);
+
+  // Load initial data from API and localStorage
+  useEffect(() => {
+    const initializeData = async () => {
+      if (user?.email) {
+        setIsLoading(true);
+        const stateKey = `trading_state_${user.email}`;
+        
+        // Restore dashboard state from user backup if available
+        const backupData = localStorage.getItem(`user_backup_${user.email}`);
+        if (backupData) {
+          try {
+            const backup = JSON.parse(backupData);
+            if (backup.dashboardState) {
+              // Restore dashboard preferences
+              if (backup.dashboardState.activeTab) {
+                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
+              }
+              if (backup.dashboardState.selectedTimezone) {
+                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
+              }
+              if (backup.dashboardState.preferences) {
+                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
+              }
             }
-          });
-          updateTradingPlan(response.data);
+          } catch (error) {
+            console.warn('Could not restore dashboard state:', error);
+          }
+        }
+        
+        // Load data from localStorage first, then try API as enhancement
+        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
+        const localState = localStorage.getItem(stateKey);
+        const questionnaireData = localStorage.getItem('questionnaireAnswers');
+        const riskPlanData = localStorage.getItem('riskManagementPlan');
+        
+        let parsedQuestionnaire = null;
+        let parsedRiskPlan = null;
+        
+        try {
+          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
+          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
+        } catch (parseError) {
+          console.warn('Error parsing questionnaire data, using defaults');
+        }
+        
+        // Create dashboard data from questionnaire if available
+        const accountValue = parsedQuestionnaire?.hasAccount === 'yes' 
+          ? parsedQuestionnaire?.accountEquity 
+          : parsedQuestionnaire?.accountSize;
+
+    <FuturisticScene className="min-h-screen text-white flex items-center justify-center p-4 relative">
+      <AnimatedBackground />
+      <div className="relative w-full max-w-3xl z-10">
+        <Card3D className="p-8 form-3d" glowColor="cyan">
+          <div className="relative z-10">
+            <HolographicText className="text-3xl font-bold mb-6 text-center text-blue-400">Trading Preferences</HolographicText>
+            <p className="mb-8 text-center text-gray-400">Help us tailor your experience by answering a few questions.</p>
+            experience: parsedQuestionnaire?.experience || 'intermediate',
+          riskProtocol: {
+            maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
+            riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
+            maxDrawdown: '10%'
+          }
+        };
+        
+        // Set dashboard data from localStorage or fallback
+        if (localDashboardData) {
+          try {
+            setDashboardData(JSON.parse(localDashboardData));
+          } catch {
+            setDashboardData(fallbackDashboardData);
+          }
+        } else {
+          setDashboardData(fallbackDashboardData);
+        }
+        
+        // Initialize trading state
+        if (localState) {
+          try {
+            setTradingState(JSON.parse(localState));
+          } catch {
+            // Create new state if parsing fails
+            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+              ? parsedQuestionnaire?.accountEquity 
+              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+            const initialState: TradingState = {
+              initialEquity,
+              currentEquity: initialEquity,
+              trades: [],
+              openPositions: [],
+              riskSettings: {
+                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+                dailyLossLimit: 5,
+                consecutiveLossesLimit: 3,
+              },
+              performanceMetrics: {
+                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+                consecutiveLosses: 0,
+              },
+              dailyStats: { pnl: 0, trades: 0, initialEquity },
+            };
+            setTradingState(initialState);
+            localStorage.setItem(stateKey, JSON.stringify(initialState));
+          }
+        } else {
+          // Create initial state for new users
+          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+            ? parsedQuestionnaire?.accountEquity 
+            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+          const initialState: TradingState = {
+            initialEquity,
+            currentEquity: initialEquity,
+            trades: [],
+            openPositions: [],
+            riskSettings: {
+              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+              dailyLossLimit: 5,
+              consecutiveLossesLimit: 3,
+            },
+            performanceMetrics: {
+              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+              consecutiveLosses: 0,
+            },
+            dailyStats: { pnl: 0, trades: 0, initialEquity },
+          };
+          setTradingState(initialState);
+          localStorage.setItem(stateKey, JSON.stringify(initialState));
+        }
+        
+        try {
+          const response = await api.get('/api/dashboard-data');
+          setDashboardData(response.data);
         } catch (error) {
-          console.error('Failed to generate trading plan', error);
-        } finally {
-          setIsLoading(false);
-        }
-      }
-    };
-
-    generatePlan();
-  }, [propFirm, accountConfig, riskConfig, updateTradingPlan]);
-
-  if (isLoading) {
-    return <div>Loading...</div>;
-  }
-
-  if (!propFirm || !accountConfig || !riskConfig || !tradingPlan) {
-    navigate('/setup/prop-firm');
-    return null;
-  }
-
-  const accountSize = accountConfig.size;
-  
-  // Derive risk tolerance from risk percentage
-  const getRiskTolerance = (riskPercentage: number): 'conservative' | 'moderate' | 'aggressive' => {
-    if (riskPercentage <= 0.5) return 'conservative';
-    if (riskPercentage <= 1) return 'moderate';
-    return 'aggressive';
-  };
-  
-  const riskTolerance = getRiskTolerance(riskConfig.riskPercentage);
-
-  // Extract profit target from prop firm rules
-  const extractProfitTarget = (profitTargetString: string): number => {
-    // Extract first percentage from strings like "10% (Phase 1), 5% (Phase 2)" or "10%"
-    const match = profitTargetString.match(/(\d+(?:\.\d+)?)%/);
-    return match ? parseFloat(match[1]) : 10; // Default to 10% if can't parse
-  };
-
-  // Extract daily loss from prop firm rules
-  const extractDailyLoss = (dailyLossString: string): number => {
-    const match = dailyLossString.match(/(\d+(?:\.\d+)?)%/);
-    return match ? parseFloat(match[1]) : 5; // Default to 5% if can't parse
-  };
-
-  // Extract max drawdown from prop firm rules
-  const extractMaxDrawdown = (maxLossString: string): number => {
-    const match = maxLossString.match(/(\d+(?:\.\d+)?)%/);
-    return match ? parseFloat(match[1]) : 10; // Default to 10% if can't parse
-  };
-
-  // Extract min trading days
-  const extractMinTradingDays = (minDaysString: string): number => {
-    const match = minDaysString.match(/(\d+)/);
-    return match ? parseInt(match[1]) : 10; // Default to 10 days if can't parse
-  };
-
-  const rules = {
-    dailyLoss: extractDailyLoss(propFirm.dailyLossLimit),
-    maxDrawdown: extractMaxDrawdown(propFirm.maximumLoss),
-    profitTarget: extractProfitTarget(propFirm.profitTargets),
-    minTradingDays: extractMinTradingDays(propFirm.minTradingDays),
-    maxPositionSize: 2, // Default
-    scalingTarget: 10, // Default
-    consistencyRule: propFirm.consistencyRule || false,
-    consistencyPercentage: propFirm.consistencyPercentage || 0
-  };
-
-  // Risk parameters based on tolerance
-  const riskParams = {
-    conservative: { baseRisk: 0.5, maxRisk: 1.0, targetMultiplier: 2 },
-    moderate: { baseRisk: 1.0, maxRisk: 1.5, targetMultiplier: 2.5 },
-    aggressive: { baseRisk: 1.5, maxRisk: 2.0, targetMultiplier: 3 }
-  };
-
-  const params = riskParams[riskTolerance];
-
-  // Generate trading plan
-  const generateTradingPlan = (timeline: '30day' | '45day' | '60day') => {
-    const profitTarget = (accountSize * rules.profitTarget) / 100;
-    const riskPerTrade = riskConfig.riskPercentage;
-    const rewardRatio = riskConfig.riskRewardRatio;
-    const maxConsecutiveLosses = riskConfig.maxConsecutiveLosses || 3;
-    const tradingExperience = riskConfig.tradingExperience || 'intermediate';
-    
-    // Calculate realistic timeline based on user parameters
-    const avgTradesPerDay = tradingExperience === 'beginner' ? 1 : 
-                           tradingExperience === 'intermediate' ? 1.5 : 2;
-    const winRate = 0.65; // 65% estimated win rate
-    const avgRewardPerWin = (accountSize * riskPerTrade * rewardRatio) / 100;
-    const avgLossPerLoss = (accountSize * riskPerTrade) / 100;
-    
-    // Calculate expected profit per trade
-    const expectedProfitPerTrade = (winRate * avgRewardPerWin) - ((1 - winRate) * avgLossPerLoss);
-    const tradesNeeded = Math.ceil(profitTarget / expectedProfitPerTrade);
-    const estimatedDays = Math.ceil(tradesNeeded / avgTradesPerDay);
-    
-    // Add buffer for drawdown periods
-    const bufferDays = Math.ceil(estimatedDays * 0.3);
-    const totalDays = estimatedDays + bufferDays;
-    
-    // Generate dynamic trading plan
-    const trades = [];
-    let currentRisk = riskPerTrade;
-    let consecutiveLosses = 0;
-    let totalProfit = 0;
-    let tradeCount = 0;
-    
-    // Calculate lot size based on risk percentage
-    function calculateLotSize(riskPercent: number, accountBalance: number) {
-      const riskAmount = (accountBalance * riskPercent) / 100;
-      const pipValue = 10; // Simplified: $10 per pip for standard lot
-      const averagePipsAtRisk = 20; // Average 20 pips stop loss
-      return Math.round((riskAmount / (averagePipsAtRisk * pipValue)) * 100) / 100;
-    }
-
-    while (totalProfit < profitTarget && tradeCount < tradesNeeded * 1.5) {
-      tradeCount++;
-      
-      // Simulate trade outcome
-      const isWin = Math.random() < winRate;
-      
-      if (isWin) {
-        const profit = (accountSize * currentRisk * rewardRatio) / 100;
-        totalProfit += profit;
-        consecutiveLosses = 0;
-        
-        // Slightly increase risk after wins (max 0.1% increase)
-        if (currentRisk < params.maxRisk) {
-          currentRisk = Math.min(params.maxRisk, currentRisk + 0.1);
+          console.error('Failed to fetch dashboard data from API, using fallback.', error);
         }
         
-        trades.push({
-          id: tradeCount,
-          risk: currentRisk,
-          reward: currentRisk * rewardRatio,
-          outcome: 'win',
-          expectedReturn: profit,
-          lotSize: calculateLotSize(currentRisk, accountSize),
-          description: `Trade ${tradeCount} - WIN (+${profit.toFixed(0)})`,
-          timeframe: '1H',
-          pairs: ['EURUSD', 'GBPUSD', 'USDJPY'],
-          stopLoss: 0,
-          takeProfit: 0
-        });
-      } else {
-        const loss = (accountSize * currentRisk) / 100;
-        totalProfit -= loss;
-        consecutiveLosses++;
-        
-        // Decrease risk after consecutive losses
-        if (consecutiveLosses >= maxConsecutiveLosses) {
-          currentRisk = Math.max(0.25, currentRisk * 0.8); // Reduce by 20%
-          consecutiveLosses = 0; // Reset counter after adjustment
+        // Generate comprehensive mock dashboard data if none exists
+        if (!localDashboardData) {
+          const mockDashboardData = {
+            user: {
+              name: user.name || 'Trader',
+              email: user.email,
+              membershipTier: user.membershipTier || 'professional',
+              joinDate: new Date().toISOString(),
+              lastLogin: new Date().toISOString(),
+            },
+            account: {
+              balance: tradingPlan?.userProfile?.initialBalance || 10000,
+              equity: tradingPlan?.userProfile?.initialBalance || 10000,
+              margin: 0,
+              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
+              marginLevel: 0
+            },
+            performance: {
+              totalPnl: 0,
+              winRate: 0,
+              totalTrades: 0,
+              profitFactor: 0,
+              maxDrawdown: 0
+            },
+            signals: [],
+            news: [],
+            lastUpdated: new Date().toISOString()
+          };
+          
+          setDashboardData(mockDashboardData);
+          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
         }
         
-        trades.push({
-          id: tradeCount,
-          risk: currentRisk,
-          reward: 0,
-          outcome: 'loss',
-          expectedReturn: -loss,
-          lotSize: calculateLotSize(currentRisk, accountSize),
-          description: `Trade ${tradeCount} - LOSS (-${loss.toFixed(0)})`,
-          timeframe: '1H',
-          pairs: ['EURUSD', 'GBPUSD', 'USDJPY'],
-          stopLoss: 0,
-          takeProfit: 0
-        });
-      }
-    }
-
-    const winningTrades = trades.filter(t => t.outcome === 'win');
-    const losingTrades = trades.filter(t => t.outcome === 'loss');
-
-    return {
-      trades,
-      timeline: {
-        estimatedDays: totalDays,
-        tradesNeeded: tradesNeeded,
-        avgTradesPerDay: avgTradesPerDay,
-        total: totalDays
-      },
-      targets: {
-        totalTarget: profitTarget,
-        expectedProfit: totalProfit,
-        winningTrades: winningTrades.length,
-        losingTrades: losingTrades.length,
-        finalWinRate: (winningTrades.length / trades.length) * 100
+        setIsLoading(false);
       }
     };
-  };
+    initializeData();
+  }, [user, tradingPlan]);
 
-  const plan = tradingPlan;
-
-  const handleContinue = () => {
-    // Mark setup as complete and persist to localStorage
-    if (user) {
-      const updatedUser = { ...user, setupComplete: true };
-      setUser(updatedUser);
-      
-      // Persist the updated user data to localStorage
-      localStorage.setItem('current_user', JSON.stringify(updatedUser));
-      localStorage.setItem(`user_profile_${user.email}`, JSON.stringify(updatedUser));
+  // Persist data to localStorage on change
+  useEffect(() => {
+    if (user?.email && tradingState) {
+      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
     }
-    // Navigate to dashboard
-    navigate('/dashboard');
+    if (user?.email && dashboardData) {
+      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
+    }
+  }, [tradingState, dashboardData, user?.email]);
+
+  const handleConsentAccept = () => {
+    setShowConsentForm(false);
   };
 
-  const downloadPlan = () => {
-    const planData = {
-      propFirm: propFirm.name,
-      accountSize: accountConfig.size,
-      challengeType: accountConfig.challengeType,
-      riskPercentage: riskConfig.riskPercentage,
-      riskRewardRatio: riskConfig.riskRewardRatio,
-      timeline: selectedPlan,
-      trades: plan.trades,
-      targets: plan.targets,
-      timeline_details: plan.timeline
-    };
-    
-    const dataStr = JSON.stringify(planData, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
-    const exportFileDefaultName = `${propFirm.name}_Trading_Plan_${accountConfig.size}.json`;
-    
-    const linkElement = document.createElement('a');
-    linkElement.setAttribute('href', dataUri);
-    linkElement.setAttribute('download', exportFileDefaultName);
-    linkElement.click();
+  const handleConsentDecline = () => {
+    onLogout();
   };
 
-  return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-950 via-gray-900 to-gray-950">
-      <Header />
-      
-      <div className="pt-20 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="text-center mb-12">
-            <div className="flex items-center justify-center space-x-2 text-blue-400 mb-4">
-              <Target className="w-6 h-6" />
-              <span className="text-sm font-medium">Step 4 of 5</span>
-            </div>
-            <h1 className="text-4xl md:text-5xl font-bold text-white mb-4">Your Custom Trading Plan</h1>
-            <p className="text-lg text-gray-400 max-w-2xl mx-auto mb-6">
-              Personalized trading strategy for your {propFirm.name} {accountConfig.challengeType} challenge
-            </p>
-            
-            {/* Configuration Summary */}
-            <div className="bg-gray-800/60 backdrop-blur-sm rounded-xl border border-gray-700 p-4 max-w-lg mx-auto">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div className="text-center">
-                  <div className="text-blue-400 font-semibold">{propFirm.name}</div>
-                  <div className="text-gray-400">Prop Firm</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-green-400 font-semibold">${accountConfig.size.toLocaleString()}</div>
-                  <div className="text-gray-400">Account Size</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-purple-400 font-semibold">{riskConfig.riskPercentage}%</div>
-                  <div className="text-gray-400">Risk Per Trade</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-yellow-400 font-semibold">1:{riskConfig.riskRewardRatio}</div>
-                  <div className="text-gray-400">Risk:Reward</div>
-                </div>
-              </div>
+  const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
+    if (tradingState) {
+      if (isDailyLossLimitReached(tradingState)) {
+        alert("You have hit your daily loss limit. No more trades are allowed today.");
+        return;
+      }
+      const stateAfterOpen = openTrade(tradingState, signal);
+      const newTrade = stateAfterOpen.openPositions[stateAfterOpen.openPositions.length - 1];
+      const finalState = closeTrade(stateAfterOpen, newTrade.id, outcome, pnl);
+      setTradingState(finalState);
+    }
+  };
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
+        <FuturisticBackground />
+        <FuturisticCursor />
+        
+        {/* Futuristic Loading Animation */}
+        <div className="relative z-10 text-center">
+          {/* Main Loading Circle */}
+          <div className="relative mb-8">
+            <div className="w-32 h-32 mx-auto relative">
+              {/* Outer rotating ring */}
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
+              {/* Middle rotating ring */}
+              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+              {/* Inner pulsing core */}
+              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
+              {/* Center dot */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
             </div>
           </div>
-
-          <div className="space-y-6">
-            {/* Plan Selection */}
-            <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700 p-6">
-              <h3 className="text-xl font-semibold text-white mb-4">Select Trading Plan Timeline</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {[
-                  { id: '30day', label: '30-Day Plan', desc: 'Aggressive timeline' },
-                  { id: '45day', label: '45-Day Plan', desc: 'Balanced approach' },
-                  { id: '60day', label: '60-Day Plan', desc: 'Conservative timeline' }
-                ].map((option) => (
-                  <button
-                    key={option.id}
-                    onClick={() => setSelectedPlan(option.id as any)}
-                    className={`p-4 rounded-xl border-2 transition-all ${
-                      selectedPlan === option.id
-                        ? 'border-blue-500 bg-blue-500/20'
-                        : 'border-gray-600 bg-gray-700/50 hover:border-gray-500'
-                    }`}
+          
+          {/* Loading Text with Typewriter Effect */}
+          <div className="text-2xl font-bold mb-4">
+            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
+              INITIALIZING DASHBOARD
+            </span>
+            <div className="space-y-6">
+              <div>
+                      }`}
+                    >
+                      <div className="text-center">
+                        <div className="font-semibold text-white">{option.label}</div>
+                        <div className="text-sm text-gray-400 mt-1">{option.desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </Card3D>
+            </ScrollReveal>
+            </div>
+            <div className="flex items-center space-x-3">
+            <ScrollReveal delay={0.8}>
+              <Card3D className="p-6" glowColor="green">
+                <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+                  <Button3D
+                    onClick={downloadPlan}
+                    variant="secondary"
                   >
-                    <div className="text-center">
-                      <div className="font-semibold text-white">{option.label}</div>
-                      <div className="text-sm text-gray-400 mt-1">{option.desc}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Prop Firm Rules */}
-            <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">{propFirm.name} Trading Rules</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-gray-700/50 rounded-xl p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <AlertTriangle className="w-4 h-4 text-red-400" />
-                    <span className="text-white font-medium">Daily Loss Limit</span>
-                  </div>
-                  <div className="text-2xl font-bold text-red-400">{rules.dailyLoss}%</div>
-                  <div className="text-sm text-gray-400">${(accountSize * rules.dailyLoss / 100).toLocaleString()}</div>
+                    <Download className="w-5 h-5 mr-2" />
+                    <span>Download Plan</span>
+                  </Button3D>
+                  
+                  <Button3D
+                    onClick={handleContinue}
+                    variant="primary"
+                    size="lg"
+                  >
+                    <span>Continue to Dashboard</span>
+                    <ArrowRight className="w-5 h-5 ml-2" />
+                  </Button3D>
                 </div>
-                
-                <div className="bg-gray-700/50 rounded-xl p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <Target className="w-4 h-4 text-blue-500" />
-                    <span className="text-white font-medium">Profit Target</span>
-                  </div>
-                  <div className="text-2xl font-bold text-blue-500">{rules.profitTarget}%</div>
-                  <div className="text-sm text-gray-400">${(accountSize * rules.profitTarget / 100).toLocaleString()}</div>
-                </div>
-                
-                <div className="bg-gray-700/50 rounded-xl p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <TrendingUp className="w-4 h-4 text-yellow-400" />
-                    <span className="text-white font-medium">Max Drawdown</span>
-                  </div>
-                  <div className="text-2xl font-bold text-yellow-400">{rules.maxDrawdown}%</div>
-                  <div className="text-sm text-gray-400">${(accountSize * rules.maxDrawdown / 100).toLocaleString()}</div>
-                </div>
-              </div>
-
-              {/* Consistency Rule Display */}
-              {rules.consistencyRule && (
-                <div className="mt-4 bg-orange-600/20 border border-orange-600 rounded-xl p-4">
-                  <div className="flex items-center space-x-2 mb-2">
-                    <AlertTriangle className="w-4 h-4 text-orange-400" />
-                    <span className="text-white font-medium">Consistency Rule</span>
-                  </div>
-                  <div className="text-lg font-bold text-orange-400">{rules.consistencyPercentage}%</div>
-                  <div className="text-sm text-gray-400">
-                    Maximum daily profit as % of total target: ${((accountSize * rules.profitTarget / 100) * rules.consistencyPercentage / 100).toLocaleString()}
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Trading Sequence */}
-            <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Detailed Trading Sequence</h3>
-              <div className="space-y-4 max-h-96 overflow-y-auto">
-                {plan.trades.slice(0, 20).map((trade, index) => (
-                  <div key={trade.id} className="bg-gray-700/50 rounded-xl p-4 border border-gray-600">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center space-x-3">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-semibold text-sm ${
-                          trade.outcome === 'win' ? 'bg-green-600' : 'bg-red-600'
-                        }`}>
-                          {trade.id}
-                        </div>
-                        <span className="text-white font-medium">Trade {trade.id}</span>
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          trade.outcome === 'win' ? 'bg-green-600/20 text-green-400' : 'bg-red-600/20 text-red-400'
-                        }`}>
-                          {trade.outcome.toUpperCase()}
-                        </span>
-                      </div>
-                      <div className={`font-semibold ${
-                        trade.expectedReturn >= 0 ? 'text-green-400' : 'text-red-400'
-                      }`}>
-                        {trade.expectedReturn >= 0 ? '+' : ''}${trade.expectedReturn.toFixed(0)}
-                      </div>
-                    </div>
-                    
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <div className="text-gray-400">Risk</div>
-                        <div className="text-white font-medium">{trade.risk.toFixed(2)}%</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-400">Lot Size</div>
-                        <div className="text-blue-400 font-medium">{trade.lotSize}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-400">Timeframe</div>
-                        <div className="text-white">{trade.timeframe}</div>
-                      </div>
-                      <div>
-                        <div className="text-gray-400">Pairs</div>
-                        <div className="text-white">{trade.pairs.join(', ')}</div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                {plan.trades.length > 20 && (
-                  <div className="text-center text-gray-400 text-sm">
-                    ... and {plan.trades.length - 20} more trades
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Plan Timeline */}
-            <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Personalized Trading Plan Timeline</h3>
-              <div className="bg-gray-700/50 rounded-xl p-6">
-                <h4 className="text-white font-medium mb-4">Your Custom Plan Results</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Estimated Timeline:</span>
-                      <span className="text-white font-semibold">{plan.timeline.estimatedDays} days</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Total Trades Needed:</span>
-                      <span className="text-white font-semibold">{plan.timeline.tradesNeeded}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Avg Trades/Day:</span>
-                      <span className="text-white font-semibold">{plan.timeline.avgTradesPerDay}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Starting Risk:</span>
-                      <span className="text-white font-semibold">{riskConfig.riskPercentage}%</span>
-                    </div>
-                  </div>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Profit Target:</span>
-                      <span className="text-blue-500 font-semibold">${plan.targets.totalTarget.toFixed(0)}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Expected Wins:</span>
-                      <span className="text-green-400 font-semibold">{plan.targets.winningTrades}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Expected Losses:</span>
-                      <span className="text-red-400 font-semibold">{plan.targets.losingTrades}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-gray-400">Final Win Rate:</span>
-                      <span className="text-blue-500 font-semibold">{plan.targets.finalWinRate.toFixed(1)}%</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Risk Management Protocol */}
-            <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-white mb-4">Dynamic Risk Management Protocol</h3>
-              <div className="bg-blue-600/20 border border-blue-600 rounded-lg p-4 mb-4">
-                <h4 className="text-blue-400 font-semibold mb-2">Adaptive Risk System</h4>
-                <p className="text-gray-300 text-sm">
-                  Your plan automatically adjusts risk based on performance. After {riskConfig.maxConsecutiveLosses || 3} consecutive losses, 
-                  risk reduces by 20%. After wins, risk gradually increases up to your maximum of {params.maxRisk}%.
-                </p>
-              </div>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                    <span className="text-white text-sm">Starting risk per trade: {riskConfig.riskPercentage}%</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                    <span className="text-white text-sm">Risk-reward ratio: 1:{riskConfig.riskRewardRatio}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                    <span className="text-white text-sm">Max consecutive losses: {riskConfig.maxConsecutiveLosses || 3}</span>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                    <span className="text-white text-sm">Daily loss limit: {rules.dailyLoss}%</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                    <span className="text-white text-sm">Max drawdown: {rules.maxDrawdown}%</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle className="w-4 h-4 text-blue-500" />
-                    <span className="text-white text-sm">
-                      {rules.consistencyRule ? `Consistency rule: ${rules.consistencyPercentage}%` : 'No consistency rule'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="bg-gray-800/60 backdrop-blur-sm rounded-2xl border border-gray-700 p-6">
-              <div className="flex flex-col sm:flex-row gap-4 justify-center items-center">
+              </Card3D>
+            </ScrollReveal>
+            <div className="animate-pulse">» Establishing secure connection...</div>
+            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
+            <ScrollReveal delay={1.0}>
+              <div className="flex justify-between items-center mt-8">
                 <button
-                  onClick={downloadPlan}
-                  className="flex items-center space-x-2 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-xl font-semibold transition-colors"
+                  onClick={() => navigate('/setup/risk')}
+                  className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors nav-item-3d"
                 >
-                  <Download className="w-5 h-5" />
-                  <span>Download Plan</span>
-                </button>
-                
-                <button
-                  onClick={handleContinue}
-                  className="flex items-center space-x-2 bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-xl font-semibold transition-colors shadow-lg"
-                >
-                  <span>Continue to Dashboard</span>
-                  <ArrowRight className="w-5 h-5" />
+                  <ArrowLeft className="w-5 h-5" />
+                  <span>Back to Risk Config</span>
                 </button>
               </div>
-            </div>
-
-            {/* Navigation */}
-            <div className="flex justify-between items-center mt-8">
-              <button
-                onClick={() => navigate('/setup/risk')}
-                className="flex items-center space-x-2 text-gray-400 hover:text-white transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5" />
-                <span>Back to Risk Config</span>
-              </button>
-            </div>
+            </ScrollReveal>
           </div>
         </div>
       </div>
-    </div>
+    );
+  }
+
+  if (!user.setupComplete) {
+    const message = user.membershipTier === 'kickstarter'
+      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
+      : "Please complete the setup process to access your dashboard.";
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
+        <FuturisticBackground />
+        <FuturisticCursor />
+        <div className="relative z-10 text-center">
+          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
+          <p className="text-gray-400">{message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const renderTheme = () => {
+    const props = {
+      onLogout,
+      tradingState,
+      dashboardData,
+      handleMarkAsTaken,
+      setTradingState,
+      user,
+    };
+    switch (theme) {
+      case 'concept1':
+        return <DashboardConcept1 {...props} />;
+      case 'concept2':
+        return <DashboardConcept2 {...props} />;
+      case 'concept3':
+        return <DashboardConcept3 {...props} />;
+      case 'concept4':
+        return <DashboardConcept4 {...props} />;
+      default:
+        return <DashboardConcept1 {...props} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950 font-inter relative">
+      <FuturisticBackground />
+      <FuturisticCursor />
+      <ConsentForm 
+        isOpen={showConsentForm}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+      <div className="theme-switcher fixed top-4 right-4 z-50">
+        <select 
+          onChange={(e) => {
+            const newTheme = e.target.value;
+            setTheme(newTheme);
+            // Persist theme selection to localStorage
+            localStorage.setItem('dashboard_selected_concept', newTheme);
+            logActivity('theme_change', { theme: newTheme });
+          }}
+          value={theme}
+          className="bg-gray-800 text-white p-2 rounded border border-gray-600"
+        >
+          <option value="concept1">Concept 1</option>
+          <option value="concept2">Concept 2</option>
+          <option value="concept3">Concept 3</option>
+          <option value="concept4">Concept 4</option>
+        </select>
+      </div>
+      {renderTheme()}
+    </FuturisticScene>
   );
 };
 
-export default TradingPlanGenerator;
+export default Dashboard;
