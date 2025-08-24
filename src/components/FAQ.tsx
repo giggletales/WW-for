@@ -1,88 +1,86 @@
-import React, { useState } from 'react';
-import { ChevronDown, HelpCircle, Briefcase, Shield, Zap, DollarSign, Clock } from 'lucide-react';
-import Header from './Header';
+import { useState, useEffect } from 'react';
+import { TradingState, TradeOutcome, Signal } from '../trading/types';
+import { openTrade, closeTrade } from '../trading/tradeManager';
+import { isDailyLossLimitReached } from '../trading/riskManager';
+import { useUser } from '../contexts/UserContext';
+import { useTradingPlan } from '../contexts/TradingPlanContext';
+import api from '../api';
+import ConsentForm from './ConsentForm';
 import FuturisticScene from './3D/FuturisticScene';
-import ScrollReveal from './3D/ScrollReveal';
-import Card3D from './3D/Card3D';
-import HolographicText from './3D/HolographicText';
-import AnimatedBackground from './3D/AnimatedBackground';
-import '../styles/3d-animations.css';
+import DashboardConcept1 from './DashboardConcept1';
+import DashboardConcept2 from './DashboardConcept2';
+import DashboardConcept3 from './DashboardConcept3';
+import DashboardConcept4 from './DashboardConcept4';
+import { logActivity } from '../api/activity';
 
-const FAQ: React.FC = () => {
-  const [open, setOpen] = useState<number | null>(null);
+const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
+  const { user } = useUser();
+  const { tradingPlan } = useTradingPlan();
+  const [theme, setTheme] = useState(() => {
+    // Load persisted theme from localStorage
+    const savedTheme = localStorage.getItem('dashboard_selected_concept');
+    return savedTheme || 'concept1';
+  });
+  const [tradingState, setTradingState] = useState<TradingState | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showConsentForm, setShowConsentForm] = useState(false);
 
-  const toggle = (index: number) => {
-    setOpen(open === index ? null : index);
-  };
-
-  const faqCategories = [
-    {
-      category: "General Questions",
-      icon: <HelpCircle className="w-6 h-6" />,
-      questions: [
-        {
-          question: "What is TraderEdge Pro?",
-          answer: "TraderEdge Pro is an all-in-one platform designed to help traders successfully pass proprietary firm challenges and manage their funded accounts. We provide custom trading plans, advanced risk management tools, real-time signals, and expert support."
-        },
-        {
-          question: "Who is this service for?",
-          answer: "Our service is for both aspiring and experienced traders who want to get funded by prop firms. Whether you're new to prop firm challenges or a seasoned trader looking for an edge, our tools can help you achieve your goals."
-        },
-      ]
-    },
-    {
-      category: "Prop Firms & Challenges",
-      icon: <Briefcase className="w-6 h-6" />,
-      questions: [
-        {
-          question: "Which prop firms do you support?",
-          answer: "We support over 150 of the top prop firms in the industry, including FTMO, MyForexFunds, The5%ers, and many more. Our platform automatically extracts the rules and objectives for your selected firm and challenge type."
-        },
-        {
-          question: "How does the trading plan work?",
-          answer: "Our proprietary algorithm generates a personalized, multi-phase trading plan based on your selected prop firm, account size, and risk tolerance. It provides clear guidelines on position sizing, daily loss limits, and profit targets to keep you on track."
-        },
-        {
-            question: "How long does it take to clear a challenge?",
-            answer: "The time it takes to clear a challenge varies depending on the prop firm and your trading performance. Our tools and strategies are designed to help you clear challenges as quickly as possible, often within the first month."
-        }
-      ]
-    },
-    {
-        category: "Billing & Subscriptions",
-        icon: <DollarSign className="w-6 h-6" />,
-        questions: [
-            {
-                question: "What are the subscription options?",
-                answer: "We offer several subscription tiers, including a monthly and a yearly plan. We also have a free Kickstarter plan for those who use our affiliate links with supported prop firms. You can find more details on our Pricing page."
-            },
-            {
-                question: "Can I cancel my subscription?",
-                answer: "Yes, you can cancel your subscription at any time from your account dashboard. There are no long-term contracts or hidden fees. Your access will continue until the end of your current billing period."
-            }
-        ]
-    },
-    {
-      category: "Security & Support",
-      icon: <Shield className="w-6 h-6" />,
-      questions: [
-        {
-          question: "Is my trading account information secure?",
-          answer: "Absolutely. We use state-of-the-art encryption and security protocols to protect your data. We do not have direct access to your trading accounts or funds. Our platform only requires read-only data to track performance."
-        },
-        {
-          question: "What kind of support do you offer?",
-          answer: "We offer 24/7 expert support from a team of experienced traders and technical staff. You can reach us via live chat, email, or through our dedicated Discord community for members."
-        }
-      ]
+  // Check for consent on mount
+  useEffect(() => {
+    const consentGiven = localStorage.getItem('user_consent_accepted');
+    if (!consentGiven && user?.setupComplete) {
+      setShowConsentForm(true);
     }
-  ];
+  }, [user]);
 
-  return (
+  // Load initial data from API and localStorage
+  useEffect(() => {
+    const initializeData = async () => {
+      if (user?.email) {
+        setIsLoading(true);
+        const stateKey = `trading_state_${user.email}`;
+        
+        // Restore dashboard state from user backup if available
+        const backupData = localStorage.getItem(`user_backup_${user.email}`);
+        if (backupData) {
+          try {
+            const backup = JSON.parse(backupData);
+            if (backup.dashboardState) {
+              // Restore dashboard preferences
+              if (backup.dashboardState.activeTab) {
+                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
+              }
+              if (backup.dashboardState.selectedTimezone) {
+                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
+              }
+              if (backup.dashboardState.preferences) {
+                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
+              }
+            }
+          } catch (error) {
+            console.warn('Could not restore dashboard state:', error);
+          }
+        }
+        
+        // Load data from localStorage first, then try API as enhancement
+        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
+        const localState = localStorage.getItem(stateKey);
+        const questionnaireData = localStorage.getItem('questionnaireAnswers');
+        const riskPlanData = localStorage.getItem('riskManagementPlan');
+        
+        let parsedQuestionnaire = null;
+        let parsedRiskPlan = null;
+        
+        try {
+          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
+          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
+        } catch (parseError) {
+          console.warn('Error parsing questionnaire data, using defaults');
     <FuturisticScene className="min-h-screen bg-gradient-to-br from-gray-950 via-black to-gray-950 text-white overflow-hidden">
       <AnimatedBackground />
-      <Header />
-      <div className="container mx-auto px-4 py-24 relative z-10 pt-32">
+        
+
         <ScrollReveal delay={0.2}>
           <div className="text-center mb-20">
             <HolographicText 
@@ -97,9 +95,278 @@ const FAQ: React.FC = () => {
             </p>
           </div>
         </ScrollReveal>
-        
+          },
         <div className="max-w-4xl mx-auto">
-          {faqCategories.map((category, catIndex) => (
+            accountBalance: accountValue || parsedRiskPlan?.accountSize || 100000,
+        };
+        
+        // Set dashboard data from localStorage or fallback
+        if (localDashboardData) {
+          try {
+            setDashboardData(JSON.parse(localDashboardData));
+          } catch {
+            setDashboardData(fallbackDashboardData);
+          }
+        } else {
+          setDashboardData(fallbackDashboardData);
+        }
+        
+        // Initialize trading state
+        if (localState) {
+          try {
+            setTradingState(JSON.parse(localState));
+          } catch {
+            // Create new state if parsing fails
+            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+              ? parsedQuestionnaire?.accountEquity 
+              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+            const initialState: TradingState = {
+              initialEquity,
+              currentEquity: initialEquity,
+              trades: [],
+              openPositions: [],
+              riskSettings: {
+                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+                dailyLossLimit: 5,
+                consecutiveLossesLimit: 3,
+              },
+              performanceMetrics: {
+                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+                consecutiveLosses: 0,
+              },
+              dailyStats: { pnl: 0, trades: 0, initialEquity },
+            };
+            setTradingState(initialState);
+            localStorage.setItem(stateKey, JSON.stringify(initialState));
+          }
+        } else {
+          // Create initial state for new users
+          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+            ? parsedQuestionnaire?.accountEquity 
+            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+          const initialState: TradingState = {
+            initialEquity,
+            currentEquity: initialEquity,
+            trades: [],
+            openPositions: [],
+            riskSettings: {
+              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+              dailyLossLimit: 5,
+              consecutiveLossesLimit: 3,
+            },
+            performanceMetrics: {
+              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+              consecutiveLosses: 0,
+            },
+            dailyStats: { pnl: 0, trades: 0, initialEquity },
+          };
+          setTradingState(initialState);
+          localStorage.setItem(stateKey, JSON.stringify(initialState));
+        }
+        
+        try {
+          const response = await api.get('/api/dashboard-data');
+          setDashboardData(response.data);
+        } catch (error) {
+          console.error('Failed to fetch dashboard data from API, using fallback.', error);
+        }
+        
+        // Generate comprehensive mock dashboard data if none exists
+        if (!localDashboardData) {
+          const mockDashboardData = {
+            user: {
+              name: user.name || 'Trader',
+              email: user.email,
+              membershipTier: user.membershipTier || 'professional',
+              joinDate: new Date().toISOString(),
+              lastLogin: new Date().toISOString(),
+            },
+            account: {
+              balance: tradingPlan?.userProfile?.initialBalance || 10000,
+              equity: tradingPlan?.userProfile?.initialBalance || 10000,
+              margin: 0,
+              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
+              marginLevel: 0
+            },
+            performance: {
+              totalPnl: 0,
+              winRate: 0,
+              totalTrades: 0,
+              profitFactor: 0,
+              maxDrawdown: 0
+            },
+            signals: [],
+            news: [],
+            lastUpdated: new Date().toISOString()
+          };
+          
+          setDashboardData(mockDashboardData);
+          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
+        }
+        
+        setIsLoading(false);
+      }
+    };
+    initializeData();
+  }, [user, tradingPlan]);
+
+  // Persist data to localStorage on change
+  useEffect(() => {
+    if (user?.email && tradingState) {
+      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
+    }
+    if (user?.email && dashboardData) {
+      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
+    }
+  }, [tradingState, dashboardData, user?.email]);
+
+  const handleConsentAccept = () => {
+    setShowConsentForm(false);
+  };
+
+  const handleConsentDecline = () => {
+    onLogout();
+  };
+
+  const handleMarkAsTaken = (signal: Signal, outcome: TradeOutcome, pnl?: number) => {
+    if (tradingState) {
+      if (isDailyLossLimitReached(tradingState)) {
+        alert("You have hit your daily loss limit. No more trades are allowed today.");
+        return;
+      }
+      const stateAfterOpen = openTrade(tradingState, signal);
+      const newTrade = stateAfterOpen.openPositions[stateAfterOpen.openPositions.length - 1];
+      const finalState = closeTrade(stateAfterOpen, newTrade.id, outcome, pnl);
+      setTradingState(finalState);
+    }
+  };
+
+  if (isLoading || !user) {
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter overflow-hidden">
+        <FuturisticBackground />
+        <FuturisticCursor />
+        
+        {/* Futuristic Loading Animation */}
+        <div className="relative z-10 text-center">
+          {/* Main Loading Circle */}
+          <div className="relative mb-8">
+            <div className="w-32 h-32 mx-auto relative">
+              {/* Outer rotating ring */}
+              <div className="absolute inset-0 rounded-full border-2 border-transparent border-t-cyan-400 border-r-cyan-400 animate-spin"></div>
+              {/* Middle rotating ring */}
+              <div className="absolute inset-2 rounded-full border-2 border-transparent border-b-blue-400 border-l-blue-400 animate-spin" style={{animationDirection: 'reverse', animationDuration: '1.5s'}}></div>
+              {/* Inner pulsing core */}
+              <div className="absolute inset-6 rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 animate-pulse shadow-lg shadow-cyan-500/50"></div>
+              {/* Center dot */}
+              <div className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full animate-ping"></div>
+            </div>
+          </div>
+          
+          {/* Loading Text with Typewriter Effect */}
+          <div className="text-2xl font-bold mb-4">
+            <span className="bg-gradient-to-r from-cyan-400 via-blue-400 to-purple-400 bg-clip-text text-transparent animate-pulse">
+              INITIALIZING DASHBOARD
+            </span>
+          </div>
+          
+          {/* Progress Bars */}
+          <div className="space-y-3 max-w-md mx-auto">
+            <div className="flex items-center space-x-3">
+              <div className="text-cyan-400 text-sm font-mono w-24 text-left">CORE_SYS</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-cyan-400 to-blue-500 rounded-full animate-pulse" style={{width: '85%'}}></div>
+              </div>
+              <div className="text-cyan-400 text-xs font-mono w-8">85%</div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <div className="text-blue-400 text-sm font-mono w-24 text-left">DATA_SYNC</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-blue-400 to-purple-500 rounded-full animate-pulse" style={{width: '72%'}}></div>
+              </div>
+              <div className="text-blue-400 text-xs font-mono w-8">72%</div>
+            </div>
+            <div className="flex items-center space-x-3">
+              <div className="text-purple-400 text-sm font-mono w-24 text-left">UI_LOAD</div>
+              <div className="flex-1 h-1 bg-gray-800 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-purple-400 to-pink-500 rounded-full animate-pulse" style={{width: '91%'}}></div>
+              </div>
+              <div className="text-purple-400 text-xs font-mono w-8">91%</div>
+            </div>
+          </div>
+          
+          {/* Status Messages */}
+          <div className="mt-6 text-gray-400 text-sm font-mono">
+            <div className="animate-pulse">» Establishing secure connection...</div>
+            <div className="animate-pulse" style={{animationDelay: '0.5s'}}>» Loading market data streams...</div>
+            <div className="animate-pulse" style={{animationDelay: '1s'}}>» Initializing trading algorithms...</div>
+          </div>
+          
+          {/* Scanning Effect */}
+          <div className="absolute -inset-4 opacity-30">
+            <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent animate-pulse"></div>
+            <div className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-transparent via-blue-400 to-transparent animate-pulse" style={{animationDelay: '1s'}}></div>
+            <div className="absolute top-0 bottom-0 left-0 w-0.5 bg-gradient-to-b from-transparent via-purple-400 to-transparent animate-pulse" style={{animationDelay: '0.5s'}}></div>
+            <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-gradient-to-b from-transparent via-pink-400 to-transparent animate-pulse" style={{animationDelay: '1.5s'}}></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user.setupComplete) {
+    const message = user.membershipTier === 'kickstarter'
+      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
+      : "Please complete the setup process to access your dashboard.";
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
+        <FuturisticBackground />
+        <FuturisticCursor />
+        <div className="relative z-10 text-center">
+          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
+          <p className="text-gray-400">{message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const renderTheme = () => {
+    const props = {
+      onLogout,
+      tradingState,
+      dashboardData,
+      handleMarkAsTaken,
+      setTradingState,
+      user,
+    };
+    switch (theme) {
+      case 'concept1':
+        return <DashboardConcept1 {...props} />;
+      case 'concept2':
+        return <DashboardConcept2 {...props} />;
+      case 'concept3':
+        return <DashboardConcept3 {...props} />;
+      case 'concept4':
+        return <DashboardConcept4 {...props} />;
+      default:
+        return <DashboardConcept1 {...props} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950 font-inter relative">
+      <FuturisticBackground />
+      <FuturisticCursor />
+      <ConsentForm 
+        isOpen={showConsentForm}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+      <div className="theme-switcher fixed top-4 right-4 z-50">
             <ScrollReveal key={catIndex} delay={0.2 + catIndex * 0.1}>
               <div className="mb-12">
                 <h2 className="text-3xl font-bold text-white mb-6 flex items-center gap-3">
@@ -126,11 +393,11 @@ const FAQ: React.FC = () => {
                 </div>
               </div>
             </ScrollReveal>
-          ))}
-        </div>
+        </select>
       </div>
+      {renderTheme()}
     </FuturisticScene>
   );
 };
 
-export default FAQ;
+export default Dashboard;

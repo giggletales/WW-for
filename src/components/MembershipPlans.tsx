@@ -1,137 +1,248 @@
-import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { Check, Star, Zap, Crown, Shield, ArrowLeft, CheckCircle } from 'lucide-react';
-import Header from './Header';
+import { useState, useEffect } from 'react';
+import { TradingState, TradeOutcome, Signal } from '../trading/types';
+import { openTrade, closeTrade } from '../trading/tradeManager';
+import { isDailyLossLimitReached } from '../trading/riskManager';
+import { useUser } from '../contexts/UserContext';
+import { useTradingPlan } from '../contexts/TradingPlanContext';
+import api from '../api';
+import ConsentForm from './ConsentForm';
 import FuturisticScene from './3D/FuturisticScene';
-import ScrollReveal from './3D/ScrollReveal';
-import Card3D from './3D/Card3D';
-import HolographicText from './3D/HolographicText';
-import Button3D from './3D/Button3D';
-import AnimatedBackground from './3D/AnimatedBackground';
-import '../styles/3d-animations.css';
+import DashboardConcept1 from './DashboardConcept1';
+import DashboardConcept2 from './DashboardConcept2';
+import DashboardConcept3 from './DashboardConcept3';
+import DashboardConcept4 from './DashboardConcept4';
+import { logActivity } from '../api/activity';
 
-const MembershipPlans = () => {
-  const navigate = useNavigate();
+const Dashboard = ({ onLogout }: { onLogout: () => void }) => {
+  const { user } = useUser();
+  const { tradingPlan } = useTradingPlan();
+  const [theme, setTheme] = useState(() => {
+    // Load persisted theme from localStorage
+    const savedTheme = localStorage.getItem('dashboard_selected_concept');
+    return savedTheme || 'concept1';
+  });
+  const [tradingState, setTradingState] = useState<TradingState | null>(null);
+  const [dashboardData, setDashboardData] = useState<any>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showConsentForm, setShowConsentForm] = useState(false);
 
-  const plans = [
-    {
-      id: 'kickstarter',
-      name: 'Kickstarter',
-      price: 0,
-      period: 'month',
-      description: 'Buy funded account with our affiliate link and get access to premium features',
-      icon: <Shield className="w-8 h-8" />,
-      color: 'border-gray-600',
-      bgColor: 'bg-gray-800',
-      buttonColor: 'bg-gray-600 hover:bg-gray-700',
-      isAffiliate: true,
-      features: [
-        'Risk management plan for 1 month',
-        'Trading signals for 1 week',
-        'Standard risk management calculator',
-        'Phase tracking dashboard',
-        '3 prop firm rule analyzer',
-        'Access via affiliate purchase only'
-      ],
-    },
-    {
-      id: 'starter',
-      name: 'Starter',
-      price: 99,
-      period: 'month',
-      description: 'Essential features for serious traders',
-      icon: <Star className="w-8 h-8" />,
-      color: 'border-blue-500',
-      bgColor: 'bg-blue-500/10',
-      buttonColor: 'bg-blue-600 hover:bg-blue-700',
-      features: [
-        'Risk management plan for 1 month',
-        'Trading signals for 1 month',
-        'Standard risk management calculator',
-        'Phase tracking dashboard',
-        '5 prop firm rule analyzer',
-        'Email support',
-        'Auto lot size calculator'
-      ]
-    },
-    {
-      id: 'pro',
-      name: 'Pro',
-      price: 199,
-      period: 'month',
-      description: 'Advanced features for professional traders',
-      icon: <Zap className="w-8 h-8" />,
-      color: 'border-yellow-500',
-      bgColor: 'bg-yellow-500/10',
-      buttonColor: 'bg-yellow-600 hover:bg-yellow-700',
-      popular: true,
-      features: [
-        'Risk management plan for 1 month',
-        'Trading signals for 1 month',
-        'Standard risk management calculator',
-        'Phase tracking dashboard',
-        '15 prop firm rule analyzer',
-        'Priority chat and email support',
-        'Auto lot size calculator',
-        'Access to private community',
-        'Multi account tracker',
-        'Advanced trading journal',
-        'Backtesting tools',
-        'Instant access to new features'
-      ]
-    },
-    {
-      id: 'enterprise',
-      name: 'Enterprise',
-      price: 499,
-      period: '3 months',
-      description: 'Ultimate solution for trading teams and professionals',
-      icon: <Crown className="w-8 h-8" />,
-      color: 'border-purple-500',
-      bgColor: 'bg-purple-500/10',
-      buttonColor: 'bg-purple-600 hover:bg-purple-700',
-      features: [
-        'Risk management plan for 3 months',
-        'Trading signals for 3 months',
-        'Standard risk management calculator',
-        'Phase tracking dashboard',
-        '15 prop firm rule analyzer',
-        '24/7 priority chat and email support',
-        'Auto lot size calculator',
-        'Access to private community',
-        'Multi account tracker',
-        'Advanced trading journal',
-        'Professional backtesting suite',
-        'Chart analysis tools',
-        'Instant access to new features'
-      ]
+  // Check for consent on mount
+  useEffect(() => {
+    const consentGiven = localStorage.getItem('user_consent_accepted');
+    if (!consentGiven && user?.setupComplete) {
+      setShowConsentForm(true);
     }
-  ];
+  }, [user]);
 
-  const handlePlanSelect = (plan: any) => {
-    if (plan.isAffiliate) return;
-    
-    // Navigate directly to sign up with the selected plan
-    navigate('/signup', {
-      state: { 
-        selectedPlan: { 
-          name: plan.name, 
-          price: plan.price, 
-          period: plan.period 
-        } 
+  // Load initial data from API and localStorage
+  useEffect(() => {
+    const initializeData = async () => {
+      if (user?.email) {
+        setIsLoading(true);
+        const stateKey = `trading_state_${user.email}`;
+        
+        // Restore dashboard state from user backup if available
+        const backupData = localStorage.getItem(`user_backup_${user.email}`);
+        if (backupData) {
+          try {
+            const backup = JSON.parse(backupData);
+            if (backup.dashboardState) {
+              // Restore dashboard preferences
+              if (backup.dashboardState.activeTab) {
+                localStorage.setItem(`dashboard_active_tab_${user.email}`, backup.dashboardState.activeTab);
+              }
+              if (backup.dashboardState.selectedTimezone) {
+                localStorage.setItem(`dashboard_timezone_${user.email}`, backup.dashboardState.selectedTimezone);
+              }
+              if (backup.dashboardState.preferences) {
+                localStorage.setItem(`dashboard_preferences_${user.email}`, backup.dashboardState.preferences);
+              }
+            }
+          } catch (error) {
+            console.warn('Could not restore dashboard state:', error);
+          }
+        }
+        
+        // Load data from localStorage first, then try API as enhancement
+        const localDashboardData = localStorage.getItem(`dashboard_data_${user.email}`);
+        const localState = localStorage.getItem(stateKey);
+        const questionnaireData = localStorage.getItem('questionnaireAnswers');
+        const riskPlanData = localStorage.getItem('riskManagementPlan');
+        
+        let parsedQuestionnaire = null;
+        let parsedRiskPlan = null;
+        
+        try {
+          parsedQuestionnaire = questionnaireData ? JSON.parse(questionnaireData) : null;
+          parsedRiskPlan = riskPlanData ? JSON.parse(riskPlanData) : null;
+        } catch (parseError) {
+          console.warn('Error parsing questionnaire data, using defaults');
+        }
+        
+        // Create dashboard data from questionnaire if available
+        const accountValue = parsedQuestionnaire?.hasAccount === 'yes' 
+          ? parsedQuestionnaire?.accountEquity 
+          : parsedQuestionnaire?.accountSize;
+
+        const fallbackDashboardData = {
+          userProfile: {
+            propFirm: parsedQuestionnaire?.propFirm || 'Not Set',
+            accountType: parsedQuestionnaire?.accountType || 'Not Set',
+            accountSize: accountValue || 100000,
+            riskPerTrade: `${parsedQuestionnaire?.riskPercentage || 1}%`,
+            experience: parsedQuestionnaire?.experience || 'intermediate',
+            uniqueId: user?.uniqueId || 'Not Set'
+          },
+          performance: {
+            accountBalance: accountValue || parsedRiskPlan?.accountSize || 100000,
+            totalPnl: 0,
+            winRate: 0,
+            totalTrades: 0
+          },
+          riskProtocol: {
+            maxDailyRisk: parsedRiskPlan?.dailyRiskAmount || 5000,
+            riskPerTrade: parsedRiskPlan?.riskAmount || 1000,
+            maxDrawdown: '10%'
+          }
+        };
+        
+        // Set dashboard data from localStorage or fallback
+        if (localDashboardData) {
+          try {
+            setDashboardData(JSON.parse(localDashboardData));
+          } catch {
+            setDashboardData(fallbackDashboardData);
+          }
+        } else {
+          setDashboardData(fallbackDashboardData);
+        }
+        
+        // Initialize trading state
+        if (localState) {
+          try {
+            setTradingState(JSON.parse(localState));
+          } catch {
+            // Create new state if parsing fails
+            const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+              ? parsedQuestionnaire?.accountEquity 
+              : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+            const initialState: TradingState = {
+              initialEquity,
+              currentEquity: initialEquity,
+              trades: [],
+              openPositions: [],
+              riskSettings: {
+                riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+                dailyLossLimit: 5,
+                consecutiveLossesLimit: 3,
+              },
+              performanceMetrics: {
+                totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+                averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+                currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+                consecutiveLosses: 0,
+              },
+              dailyStats: { pnl: 0, trades: 0, initialEquity },
+            };
+            setTradingState(initialState);
+            localStorage.setItem(stateKey, JSON.stringify(initialState));
+          }
+        } else {
+          // Create initial state for new users
+          const initialEquity = (parsedQuestionnaire?.hasAccount === 'yes' 
+            ? parsedQuestionnaire?.accountEquity 
+            : parsedQuestionnaire?.accountSize) || parsedRiskPlan?.accountSize || 100000;
+          const initialState: TradingState = {
+            initialEquity,
+            currentEquity: initialEquity,
+            trades: [],
+            openPositions: [],
+            riskSettings: {
+              riskPerTrade: parsedQuestionnaire?.riskPercentage || 1,
+              dailyLossLimit: 5,
+              consecutiveLossesLimit: 3,
+            },
+            performanceMetrics: {
+              totalPnl: 0, winRate: 0, totalTrades: 0, winningTrades: 0, losingTrades: 0,
+              averageWin: 0, averageLoss: 0, profitFactor: 0, maxDrawdown: 0,
+              currentDrawdown: 0, grossProfit: 0, grossLoss: 0, consecutiveWins: 0,
+              consecutiveLosses: 0,
+            },
+            dailyStats: { pnl: 0, trades: 0, initialEquity },
+          };
+          setTradingState(initialState);
+          localStorage.setItem(stateKey, JSON.stringify(initialState));
+        }
+        
+        try {
+          const response = await api.get('/api/dashboard-data');
+          setDashboardData(response.data);
+        } catch (error) {
+          console.error('Failed to fetch dashboard data from API, using fallback.', error);
+        }
+        
+        // Generate comprehensive mock dashboard data if none exists
+        if (!localDashboardData) {
+          const mockDashboardData = {
+            user: {
+              name: user.name || 'Trader',
+              email: user.email,
+              membershipTier: user.membershipTier || 'professional',
+              joinDate: new Date().toISOString(),
+              lastLogin: new Date().toISOString(),
+            },
+            account: {
+              balance: tradingPlan?.userProfile?.initialBalance || 10000,
+              equity: tradingPlan?.userProfile?.initialBalance || 10000,
+              margin: 0,
+              freeMargin: tradingPlan?.userProfile?.initialBalance || 10000,
+              marginLevel: 0
+            },
+            performance: {
+              totalPnl: 0,
+              winRate: 0,
+              totalTrades: 0,
+              profitFactor: 0,
+              maxDrawdown: 0
+            },
+            signals: [],
+            news: [],
+            lastUpdated: new Date().toISOString()
+          };
+          
+          setDashboardData(mockDashboardData);
+          localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(mockDashboardData));
+        }
+        
+        setIsLoading(false);
       }
-    });
+    };
+    initializeData();
+  }, [user, tradingPlan]);
+
+  // Persist data to localStorage on change
+  useEffect(() => {
+    if (user?.email && tradingState) {
+      localStorage.setItem(`trading_state_${user.email}`, JSON.stringify(tradingState));
+    }
+    if (user?.email && dashboardData) {
+      localStorage.setItem(`dashboard_data_${user.email}`, JSON.stringify(dashboardData));
+    }
+  }, [tradingState, dashboardData, user?.email]);
+
+  const handleConsentAccept = () => {
+    setShowConsentForm(false);
   };
 
-
-  return (
+  const handleConsentDecline = () => {
+    onLogout();
     <FuturisticScene className="min-h-screen">
       <AnimatedBackground />
-      <Header />
+
       
-      <div className="pt-20 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-7xl mx-auto">
-          {/* Header */}
+        return;
+      }
+      const stateAfterOpen = openTrade(tradingState, signal);
           <ScrollReveal delay={0.2}>
             <div className="text-center mb-16">
               <Link to="/" className="inline-flex items-center space-x-2 text-blue-500 hover:text-blue-400 mb-8 nav-item-3d">
@@ -151,10 +262,10 @@ const MembershipPlans = () => {
               </p>
             </div>
           </ScrollReveal>
-
-          {/* Pricing Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {plans.map((plan, index) => (
+        
+        {/* Futuristic Loading Animation */}
+        <div className="relative z-10 text-center">
+          {/* Main Loading Circle */}
               <ScrollReveal key={index} delay={0.2 + index * 0.1}>
                 <Card3D
                   className={`relative p-6 transition-transform duration-300 ${
@@ -218,72 +329,82 @@ const MembershipPlans = () => {
                   )}
                 </Card3D>
               </ScrollReveal>
-            ))}
+            <div className="absolute top-0 bottom-0 right-0 w-0.5 bg-gradient-to-b from-transparent via-pink-400 to-transparent animate-pulse" style={{animationDelay: '1.5s'}}></div>
           </div>
-
-          {/* FAQ Section */}
-          <ScrollReveal delay={0.4}>
-            <div className="mt-20">
-              <HolographicText className="text-3xl font-bold text-white text-center mb-12">
-                Frequently Asked Questions
-              </HolographicText>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-8 max-w-6xl mx-auto">
-                <div className="space-y-6">
-                  <Card3D className="p-6" glowColor="blue">
-                    <h3 className="text-lg font-medium text-white mb-2">Which prop firms do you support?</h3>
-                    <p className="text-gray-400">We support over 150 of the top prop firms in the industry, including FTMO, MyForexFunds, The5%ers, and many more. Our platform automatically extracts the rules and objectives for your selected firm and challenge type.</p>
-                  </Card3D>
-                  <Card3D className="p-6" glowColor="green">
-                    <h3 className="text-lg font-medium text-white mb-2">How does the trading plan work?</h3>
-                    <p className="text-gray-400">Our proprietary algorithm generates a personalized, multi-phase trading plan based on your selected prop firm, account size, and risk tolerance. It provides clear guidelines on position sizing, daily loss limits, and profit targets to keep you on track.</p>
-                  </Card3D>
-                  <Card3D className="p-6" glowColor="purple">
-                    <h3 className="text-lg font-medium text-white mb-2">How long does it take to clear a challenge?</h3>
-                    <p className="text-gray-400">The time it takes to clear a challenge varies depending on the prop firm and your trading performance. Our tools and strategies are designed to help you clear challenges as quickly as possible, often within the first month.</p>
-                  </Card3D>
-                </div>
-                <div className="space-y-6">
-                  <Card3D className="p-6" glowColor="yellow">
-                    <h3 className="text-lg font-medium text-white mb-2">What are the subscription options?</h3>
-                    <p className="text-gray-400">We offer several subscription tiers, including a monthly and a yearly plan. We also have a free Kickstarter plan for those who use our affiliate links with supported prop firms. You can find more details on our Pricing page.</p>
-                  </Card3D>
-                  <Card3D className="p-6" glowColor="red">
-                    <h3 className="text-lg font-medium text-white mb-2">Can I cancel my subscription?</h3>
-                    <p className="text-gray-400">Yes, you can cancel your subscription at any time from your account dashboard. There are no long-term contracts or hidden fees. Your access will continue until the end of your current billing period.</p>
-                  </Card3D>
-                  <Card3D className="p-6" glowColor="cyan">
-                    <h3 className="text-lg font-medium text-white mb-2">Is my trading account information secure?</h3>
-                    <p className="text-gray-400">Absolutely. We use state-of-the-art encryption and security protocols to protect your data. We do not have direct access to your trading accounts or funds. Our platform only requires read-only data to track performance.</p>
-                  </Card3D>
-                </div>
-              </div>
-            </div>
-          </ScrollReveal>
-
-          {/* CTA Section */}
-          <ScrollReveal delay={0.6}>
-            <div className="mt-20 text-center">
-              <Card3D className="p-12 holographic" glowColor="cyan">
-                <HolographicText className="text-3xl font-bold text-white mb-4">
-                  Ready to Clear Your Challenge?
-                </HolographicText>
-                <p className="text-lg text-gray-300 mb-8">
-                  Choose the plan that fits your trading goals and start your funded account journey today.
-                </p>
-                <Button3D
-                  onClick={() => window.location.href = '/payment'}
-                  variant="primary"
-                  size="lg"
-                >
-                  Start Your Journey <Star className="w-5 h-5 ml-2" />
-                </Button3D>
-              </Card3D>
-            </div>
-          </ScrollReveal>
         </div>
       </div>
+    );
+  }
+
+  if (!user.setupComplete) {
+    const message = user.membershipTier === 'kickstarter'
+      ? "Your Kickstarter plan is awaiting approval. You will be notified once your account is active."
+      : "Please complete the setup process to access your dashboard.";
+    return (
+      <div className="min-h-screen bg-gray-950 flex items-center justify-center font-inter">
+        <FuturisticBackground />
+        <FuturisticCursor />
+        <div className="relative z-10 text-center">
+          <div className="text-blue-400 text-xl animate-pulse mb-4">Awaiting Access</div>
+          <p className="text-gray-400">{message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const renderTheme = () => {
+    const props = {
+      onLogout,
+      tradingState,
+      dashboardData,
+      handleMarkAsTaken,
+      setTradingState,
+      user,
+    };
+    switch (theme) {
+      case 'concept1':
+        return <DashboardConcept1 {...props} />;
+      case 'concept2':
+        return <DashboardConcept2 {...props} />;
+      case 'concept3':
+        return <DashboardConcept3 {...props} />;
+      case 'concept4':
+        return <DashboardConcept4 {...props} />;
+      default:
+        return <DashboardConcept1 {...props} />;
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-950 font-inter relative">
+      <FuturisticBackground />
+      <FuturisticCursor />
+      <ConsentForm 
+        isOpen={showConsentForm}
+        onAccept={handleConsentAccept}
+        onDecline={handleConsentDecline}
+      />
+      <div className="theme-switcher fixed top-4 right-4 z-50">
+        <select 
+          onChange={(e) => {
+            const newTheme = e.target.value;
+            setTheme(newTheme);
+            // Persist theme selection to localStorage
+            localStorage.setItem('dashboard_selected_concept', newTheme);
+            logActivity('theme_change', { theme: newTheme });
+          }}
+          value={theme}
+          className="bg-gray-800 text-white p-2 rounded border border-gray-600"
+        >
+          <option value="concept1">Concept 1</option>
+          <option value="concept2">Concept 2</option>
+          <option value="concept3">Concept 3</option>
+          <option value="concept4">Concept 4</option>
+        </select>
+      </div>
+      {renderTheme()}
     </FuturisticScene>
   );
 };
 
-export default MembershipPlans;
+export default Dashboard;
